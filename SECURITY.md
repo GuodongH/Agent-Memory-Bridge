@@ -10,6 +10,21 @@ For the concise project-wide boundary, see
 
 ## Trust Boundary Summary
 
+V0.34 adds an optional private Streamable HTTP deployment surface. It uses the
+same MCP server and standard SDK bearer authentication primitives; it does not
+host an OAuth server or provide per-namespace authorization. A dedicated
+operator-provisioned token grants access to the whole authority. Do not reuse
+tokens from another service. Keep token files private and protect remote traffic
+with TLS or an authenticated tunnel. Plain HTTP is suitable only on loopback or
+inside a protected transport boundary.
+
+HTTP defaults to loopback. Non-loopback startup requires explicit Host/Origin
+allowlists and a credential file; these controls do not supply TLS or make an
+untrusted network safe. Host/Origin protection is not authentication. Do not
+expose the backend around an authenticated reverse proxy. The minimal health
+routes contain no memory content and are not a substitute for authenticated MCP
+validation. See [remote deployment](docs/REMOTE-DEPLOYMENT.md).
+
 AMB is designed for trusted local operators. Local operating profiles are
 cooperative governance controls, not authenticated identity or access-control
 systems. `hardened-local` tightens local behavior, but it does not add OAuth,

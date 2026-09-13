@@ -103,6 +103,10 @@ jobs:
           src/agent_mem_bridge/server.py
           src/agent_mem_bridge/mcp_boundary.py
           src/agent_mem_bridge/stdio_probe.py
+          src/agent_mem_bridge/deployment_config.py
+          src/agent_mem_bridge/http_transport.py
+          src/agent_mem_bridge/http_probe.py
+          src/agent_mem_bridge/filesystem_safety.py
 
       - name: Core branch coverage
         run: >
@@ -163,21 +167,28 @@ jobs:
           "$RUNNER_TEMP/amb-wheel-venv/bin/python" -m pip install dist/*.whl
           python scripts/check_installed_distribution.py \
             --server-python "$RUNNER_TEMP/amb-wheel-venv/bin/python" \
-            --expected-version 0.33.0
+            --expected-version 0.34.0
           python -m venv "$RUNNER_TEMP/amb-sdist-venv"
           "$RUNNER_TEMP/amb-sdist-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/amb-sdist-venv/bin/python" -m pip install dist/*.tar.gz
           python scripts/check_installed_distribution.py \
             --server-python "$RUNNER_TEMP/amb-sdist-venv/bin/python" \
-            --expected-version 0.33.0
+            --expected-version 0.34.0
 
       - name: Build hardened Docker runtime
-        run: docker build --tag agent-memory-bridge:ci .
+        run: docker build --build-arg "VCS_REF=$GITHUB_SHA" --tag agent-memory-bridge:ci .
 
       - name: Smoke-test Docker version and non-root user
         run: |
           docker run --rm agent-memory-bridge:ci python -m agent_mem_bridge --version
           docker run --rm agent-memory-bridge:ci python -c "import os; assert os.getuid() == 10001"
+
+      - name: Prove container replacement, HTTP authority and readiness negatives
+        run: >
+          python scripts/check_container_deployment.py
+          --image agent-memory-bridge:ci
+          --expected-version 0.34.0 --expected-revision "$GITHUB_SHA"
+          --runtime-dir "$RUNNER_TEMP/amb-container-acceptance"
 
   legacy-sdk-compat:
     name: Compatibility / Python MCP 1.28.1 client
@@ -209,6 +220,13 @@ jobs:
           --server-python "$RUNNER_TEMP/amb-server-venv/bin/python"
           --project-root "$GITHUB_WORKSPACE"
           --runtime-dir "$RUNNER_TEMP/amb-legacy-compat"
+
+      - name: Prove legacy Streamable HTTP and exact large export
+        run: >
+          "$RUNNER_TEMP/amb-legacy-client-venv/bin/python"
+          scripts/check_http_deployment.py
+          --server-python "$RUNNER_TEMP/amb-server-venv/bin/python"
+          --runtime-dir "$RUNNER_TEMP/amb-legacy-http"
 
   modern-protocol-compat:
     name: Compatibility / Python MCP 2.0 raw wire and reliability

@@ -7,6 +7,14 @@ remote access control.
 
 ## What AMB Provides
 
+V0.34 optionally serves the existing public tools over SDK Streamable HTTP.
+The deployment's dedicated bearer credential authenticates access to the whole
+authority, not the identity of a particular person, coding client, or namespace.
+Transport uses standard SDK authentication middleware; token issuance and TLS
+remain operator responsibilities. This is not a hosted OAuth authorization
+server or a claim of full MCP OAuth interoperability. Local stdio needs none of
+that deployment configuration.
+
 - a local SQLite-backed memory and signal store
 - explicit namespaces, tags, provenance fields, and record metadata for
   filtering and review

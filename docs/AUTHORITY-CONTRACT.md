@@ -11,6 +11,13 @@ contract, but they do not replace it.
 
 ## Authority Layers
 
+The optional v0.34 HTTP deployment changes access, not ownership. One authority
+host opens one SQLite/WAL database on verified local storage. Remote clients
+call that host over MCP and fail explicitly when it is unavailable. A remote
+diagnostic must not create a fallback local writer. A backup or rehearsal copy
+is not a second live authority; production cutover and rollback require explicit
+operator sequencing and existing database-epoch safeguards.
+
 ### 1. Database records
 
 The local SQLite database is the operational source of truth for stored memory

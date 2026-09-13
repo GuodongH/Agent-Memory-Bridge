@@ -1,11 +1,11 @@
 # MCP 2026-07-28 Compatibility Contract
 
-Last updated: 2026-09-07 (America/New_York)
+Last updated: 2026-09-12 (America/New_York)
 
 This document has two layers. Keep them distinct:
 
-- **Current source (v0.33 candidate):** Python SDK dependency policy for this
-  checkout. Package identity remains `0.32.2` until an explicit release cut.
+- **Current source (v0.34):** Python SDK dependency policy for this
+  checkout, default stdio, and optional standard Streamable HTTP deployment.
 - **Historical AMB 0.26.1 denominator:** the dual-era protocol contract from
   that line (schema v7, 13 tools). That historical package did not ship today's
   `mcp>=2.0.0,<3` range.
@@ -13,7 +13,7 @@ This document has two layers. Keep them distinct:
 This document is not a release note. Release metadata remains in
 `pyproject.toml`.
 
-## Current source Python SDK policy (v0.33 candidate)
+## Current source Python SDK policy (v0.34)
 
 AMB current source supports the MCP Python SDK range `mcp>=2.0.0,<3`. The
 tested floor is `mcp==2.0.0`. CI resolves the latest supported 2.x release and
@@ -23,8 +23,9 @@ first-win, and bounded reliability. GitHub run `34155215628` on
 `36cd07bfc89d99022bd7dc86ec5f1bfd1ab5c088` resolved latest 2.x to `mcp==2.2.0`
 with `mcp-types==2.2.0`.
 
-This bounded range is intentional: AMB uses the SDK's public stdio
-server/client APIs and does not rely on an internal SDK implementation detail.
+This bounded range is intentional: AMB uses the SDK's standard stdio and
+Streamable HTTP server/client APIs. HTTP authentication composes the SDK's
+bearer verification middleware, tested at both ends of the supported range.
 Expected public-tool validation `ValueError` failures are remapped to the SDK
 `ToolError` type so 2.1.x still returns the original validation text. Unexpected
 internal `ValueError`s are not converted into model-visible internal text. A
@@ -36,6 +37,13 @@ stable release line. AMB's own Python floor remains 3.11. The separate Python
 1.28.1 client job is an interoperation proof; it does not make MCP 1.x an AMB
 runtime dependency. Current source keeps schema v12 and exactly 17 public MCP
 tools.
+
+V0.34 adds HTTP list/store/recall and exact small/large export checks to the
+floor/latest and 1.28.1-client CI paths. These supplement the historical stdio
+evidence above; they do not expand the historical 0.26.1 denominator below.
+See [Remote deployment](REMOTE-DEPLOYMENT.md) for the private authentication
+boundary and reproducible HTTP acceptance commands. Full OAuth interoperability
+is not claimed.
 
 ## Source Basis
 

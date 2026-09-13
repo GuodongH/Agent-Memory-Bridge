@@ -99,16 +99,18 @@ def test_current_source_contract_rejects_automatic_learning_claim_drift(tmp_path
     )
 
 
-def test_readmes_use_v033_release_identity() -> None:
+def test_readmes_use_v034_release_identity() -> None:
     english = (ROOT / "README.md").read_text(encoding="utf-8")
     chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
-    assert CURRENT == "0.33.0"
-    assert "Current package/source version: `0.33.0`." in english
-    assert "当前包/源码版本：`0.33.0`。" in chinese
-    assert "agent-memory-bridge==0.33.0" in english
-    assert "agent-memory-bridge==0.33.0" in chinese
-    assert "unreleased v0.33" not in english.casefold()
-    assert "尚未发布的 **v0.33" not in chinese
+    assert CURRENT == "0.34.0"
+    assert f"Current package/source version: `{CURRENT}`." in english
+    assert f"当前包/源码版本：`{CURRENT}`。" in chinese
+    assert f"agent-memory-bridge=={CURRENT}" in english
+    assert f"agent-memory-bridge=={CURRENT}" in chinese
+    assert "unreleased v0.34" not in english.casefold()
+    assert "尚未发布的 **v0.34" not in chinese
+    assert "release candidate" not in english.casefold()
+    assert "发布候选版本" not in chinese
     assert "<venv-python> -m pip install -e ." in english
     assert "<venv-python> -m pip install -e ." in chinese
 
@@ -149,6 +151,8 @@ def test_historical_v0274_evidence_remains_historical() -> None:
     assert "[v0.32.2 announcement](docs/v0.32.2-announcement.md)" in changelog
     assert "v0.33.0 source/release line" in changelog
     assert "[v0.33.0 announcement](docs/v0.33.0-announcement.md)" in changelog
+    assert "v0.34.0 source/release line" in changelog
+    assert "[v0.34.0 announcement](docs/v0.34.0-announcement.md)" in changelog
     assert "v0.28.0 candidate" not in changelog
 
 
@@ -183,6 +187,8 @@ def test_current_docs_record_published_source_without_hypothetical_wording() -> 
         "After v0.30.0 is published",
         "This source is not a published GitHub Release yet",
         "此源码尚未作为 GitHub Release 发布",
+        "release candidate",
+        "发布候选版本",
     )
     for name in docs:
         text = (ROOT / name).read_text(encoding="utf-8")

@@ -11,6 +11,9 @@ A clean starting point is:
 ```
 
 For client registration examples, see [INTEGRATIONS.md](INTEGRATIONS.md).
+Optional HTTP bind, host/origin, token-file and container-volume settings are
+documented in [Remote deployment](REMOTE-DEPLOYMENT.md). They do not change the
+default local stdio transport or the local SQLite/WAL authority contract.
 Security model and vulnerability reporting guidance live in
 [SECURITY.md](../SECURITY.md).
 

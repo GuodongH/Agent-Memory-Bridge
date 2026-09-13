@@ -1,0 +1,150 @@
+{
+  "release": "0.34.0",
+  "name": "Remote Authority Deployment",
+  "definition_version": 1,
+  "baseline_sha": "cb314ebbf96d48c13c0c298f6ac7273d701682f4",
+  "schema_version": 12,
+  "public_tool_count": 17,
+  "public_tool_schema_sha256": "24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8",
+  "statuses": ["PASS", "FAIL", "INCONCLUSIVE", "N/A"],
+  "rules": {
+    "missing_evidence": "INCONCLUSIVE, never PASS",
+    "not_applicable": "Requires explicit genuine scope reason; unavailable runtime is not N/A",
+    "result_fields": ["id", "status", "reason", "evidence_paths", "candidate_sha", "artifact_digests", "observed_at"],
+    "release_gate": "All critical evaluations observed; publication and production cutover separately owner-gated"
+  },
+  "evaluations": [
+    {
+      "id": "E1_STDIO_REGRESSION",
+      "critical": true,
+      "pass": "Installed candidate preserves default stdio first-win behavior, schema v12, and the exact 17-tool contract.",
+      "fail": "Existing valid stdio clients require migration or contract behavior changes.",
+      "inconclusive": "Required installed package or client runtime cannot be exercised.",
+      "adequate_good_probe": "Clean installed wheel and sdist; discover/list/store, close client process, fresh process recall decision and rationale.",
+      "bad_probe": "Alter a fixture tool name/schema or break startup and confirm acceptance rejects it.",
+      "unavailable_evidence_probe": "Unavailable server executable yields an explicit unavailable/non-pass result.",
+      "evidence_path": "private-evidence/E1-stdio/"
+    },
+    {
+      "id": "E2_HTTP_CONTRACT_PARITY",
+      "critical": true,
+      "pass": "SDK Streamable HTTP exposes identical 17-tool schemas/digest and durable store/recall behavior.",
+      "fail": "Extra/missing tools, altered schemas, duplicate business logic, or custom HTTP RPC.",
+      "inconclusive": "Server cannot be reached for an unrelated environmental reason.",
+      "adequate_good_probe": "Standard MCP HTTP client initialization, list, store, recall against installed candidate.",
+      "bad_probe": "Altered tool-contract fixture is rejected by parity checker.",
+      "unavailable_evidence_probe": "Closed port is reported unreachable, without local fallback.",
+      "evidence_path": "private-evidence/E2-http/"
+    },
+    {
+      "id": "E3_PROTOCOL_COMPATIBILITY",
+      "critical": true,
+      "pass": "2026-07-28 and advertised supported older protocol/client paths list and call tools on SDK floor and latest supported SDK.",
+      "fail": "Advertised path breaks or SDK floor silently increases.",
+      "inconclusive": "Required SDK/client version cannot be obtained or run.",
+      "adequate_good_probe": "Floor/latest 2.x server matrix with modern and supported legacy MCP clients over HTTP; stdio controls.",
+      "bad_probe": "Invalid protocol/session request is rejected or negotiated per specification, never silently treated as valid.",
+      "unavailable_evidence_probe": "Missing legacy client is INCONCLUSIVE, not inferred from raw-wire success.",
+      "evidence_path": "private-evidence/E3-compatibility/"
+    },
+    {
+      "id": "E4_CONTAINER_PERSISTENCE",
+      "critical": true,
+      "pass": "Unique memory and authority identity survive container deletion/replacement using only documented persistent local state.",
+      "fail": "State is lost, ephemeral, or identity unexpectedly changes.",
+      "inconclusive": "Container runtime or volume cannot be exercised.",
+      "adequate_good_probe": "Build image, store marker, remove application container, recreate from clean image with same volume, recall marker.",
+      "bad_probe": "Fresh different volume cannot recall marker and cannot masquerade as prior authority.",
+      "unavailable_evidence_probe": "Unavailable Docker daemon is explicit non-pass.",
+      "evidence_path": "private-evidence/E4-container/"
+    },
+    {
+      "id": "E5_SINGLE_AUTHORITY",
+      "critical": true,
+      "pass": "Independent clients reach one authority; outage yields transport failure and no fallback writer.",
+      "fail": "Any client silently creates or writes an independent local authority.",
+      "inconclusive": "Independent clients or controlled candidate outage cannot be exercised.",
+      "adequate_good_probe": "Two fresh clients share marker/authority; stop only isolated test authority and observe failure.",
+      "bad_probe": "Unavailable endpoint must not allow successful store or create a local DB.",
+      "unavailable_evidence_probe": "Missing second client evidence is INCONCLUSIVE.",
+      "evidence_path": "private-evidence/E5-authority/"
+    },
+    {
+      "id": "E6_NETWORK_FS_REJECTION",
+      "critical": true,
+      "pass": "Actual mount classifier fixtures reject NFS/CIFS/SMB authority storage in hardened deployment; local storage accepted.",
+      "fail": "Known unsafe remote filesystem starts hardened authority.",
+      "inconclusive": "Filesystem type cannot be established; report unknown rather than safe.",
+      "adequate_good_probe": "Local filesystem fixture and live local-volume classification.",
+      "bad_probe": "NFS/CIFS mounted at innocent path, nested mount and symlink fixtures fail before DB mutation.",
+      "unavailable_evidence_probe": "Unavailable mount metadata remains unknown and cannot satisfy hardened safety.",
+      "evidence_path": "private-evidence/E6-filesystem/"
+    },
+    {
+      "id": "E7_HTTP_SECURITY",
+      "critical": true,
+      "pass": "Safe default bind; configured Host/Origin boundary rejects invalid requests; no secret logging; intentional authenticated/private exposure boundary.",
+      "fail": "Default or hardened deployment accidentally exposes unauthenticated public service or leaks credentials.",
+      "inconclusive": "Documented authentication/overlay boundary cannot be tested.",
+      "adequate_good_probe": "Loopback default and explicit allowed host/origin; documented secured deployment path.",
+      "bad_probe": "Invalid Origin/Host, broad unconfigured bind, unauthorized request, and secret-log canary.",
+      "unavailable_evidence_probe": "Missing external security boundary evidence is stated, not assumed from documentation.",
+      "evidence_path": "private-evidence/E7-security/"
+    },
+    {
+      "id": "E8_HEALTH_READINESS",
+      "critical": true,
+      "pass": "Healthy candidate ready; inaccessible/mismatched DB/schema/authority not ready; health exposes no memory.",
+      "fail": "Readiness remains green while authority is unusable.",
+      "inconclusive": "Safe failure injection or HTTP endpoint unavailable.",
+      "adequate_good_probe": "Container HEALTHCHECK and HTTP liveness/readiness with expected schema/contract.",
+      "bad_probe": "Isolated DB inaccessible/missing/schema mismatch transitions readiness to failure without recreating authority.",
+      "unavailable_evidence_probe": "Endpoint timeout produces non-ready diagnosis.",
+      "evidence_path": "private-evidence/E8-readiness/"
+    },
+    {
+      "id": "E9_MIGRATION_REHEARSAL",
+      "critical": true,
+      "pass": "Consistent actual NAS authority copy retains explained epoch handling, durable rows/content, namespaces, indexes, representative recall/write, run/signal state; rollback rehearsed.",
+      "fail": "Unexplained durable-state/retrieval divergence or unrecoverable rollback.",
+      "inconclusive": "Required source artifact or realistic snapshot cannot be inspected.",
+      "adequate_good_probe": "Immutable backup, isolated clone, before/after manifests and spot checks, write only clone, restore into separate rollback copy.",
+      "bad_probe": "Deliberate fixture row/content divergence or corrupt snapshot rejected despite equal row counts.",
+      "unavailable_evidence_probe": "Absent real snapshot cannot be replaced by synthetic-only PASS.",
+      "evidence_path": "private-evidence/E9-migration/"
+    },
+    {
+      "id": "E10_CROSS_MACHINE_FIRST_WIN",
+      "critical": true,
+      "pass": "Machine A stores decision/rationale, disconnects; fresh client on independent machine B retrieves it through official candidate authority.",
+      "fail": "Decision/rationale cannot be recovered or clients reach different stores.",
+      "inconclusive": "Second independent machine/client unavailable.",
+      "adequate_good_probe": "Observed two-machine store/disconnect/fresh-client natural project question and recall.",
+      "bad_probe": "Different authority or incorrect namespace cannot satisfy marker/rationale assertion.",
+      "unavailable_evidence_probe": "Two processes on one host alone cannot substitute for two-machine evidence.",
+      "evidence_path": "private-evidence/E10-cross-machine/"
+    },
+    {
+      "id": "E11_LARGE_RESPONSE_BOUNDARY",
+      "critical": true,
+      "pass": "Small and large valid export complete exactly or return deliberate documented bounded response on supported modern/legacy HTTP paths.",
+      "fail": "Hang, silent truncation, corrupted payload, or opaque transport failure on supported valid workload.",
+      "inconclusive": "A required protocol/SDK path cannot be exercised.",
+      "adequate_good_probe": "Small control and realistic/deliberately large export up to 500 entries, exact entry/content verification with timeout.",
+      "bad_probe": "Truncated/corrupted response fixture and timeout must fail acceptance.",
+      "unavailable_evidence_probe": "Missing legacy path is not inferred to pass from modern path.",
+      "evidence_path": "private-evidence/E11-large-response/"
+    },
+    {
+      "id": "E12_RELEASE_ARTIFACT_PROVENANCE",
+      "critical": true,
+      "pass": "Frozen clean candidate SHA, package version, image version/revision labels, tested artifacts, and approved release source tag agree.",
+      "fail": "Artifacts built from mutable main or versions/revisions do not match.",
+      "inconclusive": "Tag/publication not authorized or tested immutable artifact evidence missing; report candidate-only checks separately.",
+      "adequate_good_probe": "Build from frozen SHA, install wheel/sdist, inspect labels/digests and tag-target check without publishing.",
+      "bad_probe": "Mismatched version/revision/tag rejected before release publication.",
+      "unavailable_evidence_probe": "Missing image/tag cannot be claimed verified; future owner step remains explicit.",
+      "evidence_path": "private-evidence/E12-provenance/"
+    }
+  ]
+}

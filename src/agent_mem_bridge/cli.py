@@ -82,6 +82,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     namespace = parser.parse_args(args)
 
     if namespace.command == "serve":
+        if namespace.transport == "streamable-http":
+            from .deployment_config import config_from_namespace
+            from .http_transport import run_http_server
+
+            try:
+                run_http_server(config_from_namespace(namespace))
+            except (OSError, ValueError):
+                print("agent-memory-bridge: HTTP configuration or authority startup failed", file=sys.stderr)
+                return 2
+            return 0
+        if any(
+            getattr(namespace, key, None) is not None
+            for key in ("host", "port", "allowed_host", "allowed_origin", "token_file")
+        ):
+            parser.error("HTTP options require --transport streamable-http")
         from .server import main as serve_server
 
         serve_server()
@@ -147,7 +162,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Agent Memory Bridge CLI")
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("serve", help="Start the MCP stdio server.")
+    serve_parser = subparsers.add_parser("serve", help="Start the MCP server (stdio by default).")
+    serve_parser.add_argument("--transport", choices=("stdio", "streamable-http"), default="stdio")
+    from .deployment_config import add_http_arguments
+
+    add_http_arguments(serve_parser)
 
     service_parser = subparsers.add_parser("service", help="Run watcher, reflex, and consolidation service loop.")
     service_parser.add_argument("--once", action="store_true", help="Run one service cycle and exit.")
@@ -351,6 +370,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subparsers.add_parser("doctor", help="Run non-invasive onboarding checks.")
     doctor_parser.add_argument("--json", action="store_true", help="Emit JSON instead of plain text.")
+    doctor_parser.add_argument("--url", help="Check a remote HTTP authority without opening a local database.")
+    doctor_parser.add_argument("--token-file", type=Path, help="Host-local bearer credential file for --url.")
+    doctor_parser.add_argument(
+        "--timeout", type=float, default=15.0, help="HTTP probe timeout in seconds (default: 15)."
+    )
     doctor_parser.add_argument(
         "--include-stdio",
         action="store_true",
@@ -363,8 +387,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Project root used for the optional stdio verify check.",
     )
 
-    verify_parser = subparsers.add_parser("verify", help="Run an isolated stdio smoke test.")
+    verify_parser = subparsers.add_parser("verify", help="Run isolated stdio or read-only remote HTTP checks.")
     verify_parser.add_argument("--json", action="store_true", help="Emit JSON instead of plain text.")
+    verify_parser.add_argument("--url", help="Check HTTP list/call parity without writing to the authority.")
+    verify_parser.add_argument("--token-file", type=Path, help="Host-local bearer credential file for --url.")
+    verify_parser.add_argument(
+        "--timeout", type=float, default=15.0, help="HTTP probe timeout in seconds (default: 15)."
+    )
     verify_parser.add_argument(
         "--project-root",
         type=Path,
@@ -708,7 +737,16 @@ def _run_first_run(namespace: argparse.Namespace) -> int:
 
 
 def _run_doctor(namespace: argparse.Namespace) -> int:
-    report = run_doctor(include_stdio=namespace.include_stdio, project_root=namespace.project_root)
+    if namespace.url and namespace.include_stdio:
+        print("agent-memory-bridge: --url cannot be combined with --include-stdio", file=sys.stderr)
+        return 2
+    report = run_doctor(
+        include_stdio=namespace.include_stdio,
+        project_root=namespace.project_root,
+        url=namespace.url,
+        token_file=namespace.token_file,
+        timeout=namespace.timeout,
+    )
     if namespace.json:
         print(json.dumps(report, indent=2))
     else:
@@ -717,7 +755,16 @@ def _run_doctor(namespace: argparse.Namespace) -> int:
 
 
 def _run_verify(namespace: argparse.Namespace) -> int:
-    report = run_verify(project_root=namespace.project_root, runtime_dir=namespace.runtime_dir)
+    if namespace.url and namespace.runtime_dir:
+        print("agent-memory-bridge: --url cannot be combined with --runtime-dir", file=sys.stderr)
+        return 2
+    report = run_verify(
+        project_root=namespace.project_root,
+        runtime_dir=namespace.runtime_dir,
+        url=namespace.url,
+        token_file=namespace.token_file,
+        timeout=namespace.timeout,
+    )
     if namespace.json:
         print(json.dumps(report, indent=2))
     else:

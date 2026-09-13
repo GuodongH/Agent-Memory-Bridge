@@ -1,4 +1,12 @@
 .git
+.slim
+.opencode
+.tmp
+.runtime*
+pip
+secrets
+private-evidence
+*.tar
 .pytest_cache
 .runtime
 .venv

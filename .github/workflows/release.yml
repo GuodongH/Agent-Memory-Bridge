@@ -18,7 +18,8 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -28,6 +29,8 @@ jobs:
       - name: Verify release tag matches package version
         shell: bash
         run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
           python - <<'PY'
           import os
           import pathlib

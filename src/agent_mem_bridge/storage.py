@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from .dynamic_state import DynamicStateStore
 from .exporters import render_export
-from .filesystem_safety import ensure_private_directory, ensure_private_file
+from .filesystem_safety import ensure_private_directory, ensure_private_file, inspect_filesystem, require_local_database
 from .learning_candidates import (
     store_learning_candidate as store_learning_candidate_entry,
 )
@@ -26,6 +26,7 @@ from .paths import (
     resolve_bridge_log_dir,
     resolve_log_backup_count,
     resolve_log_max_bytes,
+    resolve_operating_profile,
     resolve_recall_receipt_secret_path,
     resolve_require_claim_before_ack,
 )
@@ -148,8 +149,23 @@ def _collect_default_recall_items(
 
 
 class MemoryStore:
-    def __init__(self, db_path: Path, log_dir: Path | None = None, telemetry: Telemetry | None = None) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        log_dir: Path | None = None,
+        telemetry: Telemetry | None = None,
+        *,
+        require_local_filesystem: bool = False,
+    ) -> None:
         self.db_path = Path(db_path)
+        if require_local_filesystem:
+            require_local_database(self.db_path)
+        elif resolve_operating_profile() == "hardened-local":
+            # Keep existing macOS/Windows local use compatible when mount
+            # metadata is unavailable, while still refusing known unsafe
+            # network filesystems for hardened-local construction.
+            if inspect_filesystem(self.db_path)["classification"] == "network":
+                require_local_database(self.db_path)
         self.log_dir = Path(log_dir) if log_dir is not None else self.db_path.parent / "logs"
         self.log_max_bytes = resolve_log_max_bytes()
         self.log_backup_count = resolve_log_backup_count()
@@ -173,11 +189,12 @@ class MemoryStore:
         self.recall_receipt_secret = load_or_create_recall_receipt_secret(self.recall_receipt_secret_path)
 
     @classmethod
-    def from_env(cls) -> "MemoryStore":
+    def from_env(cls, *, require_local_filesystem: bool = False) -> "MemoryStore":
         return cls(
             db_path=resolve_bridge_db_path(),
             log_dir=resolve_bridge_log_dir(),
             telemetry=Telemetry.from_env(),
+            require_local_filesystem=require_local_filesystem,
         )
 
     def begin_run(

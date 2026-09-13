@@ -12,8 +12,8 @@ from tempfile import TemporaryDirectory
 from typing import Any, Literal
 
 from .database_maintenance import inspect_database
-from .filesystem_safety import path_storage_warnings, permission_report
-from .mcp_boundary import PUBLIC_TOOL_NAMES
+from .filesystem_safety import inspect_filesystem, path_storage_warnings, permission_report
+from .mcp_boundary import PUBLIC_TOOL_NAMES, PUBLIC_TOOL_SCHEMA_SHA256, package_version
 from .paths import (
     resolve_bridge_db_path,
     resolve_bridge_home,
@@ -24,6 +24,7 @@ from .paths import (
     resolve_service_heartbeat_stale_seconds,
     resolve_wal_warn_bytes,
 )
+from .schema import CURRENT_SCHEMA_VERSION
 from .service_lock import inspect_service_lock
 from .stdio_probe import run_dual_stdio_probe
 
@@ -34,7 +35,15 @@ def run_doctor(
     *,
     include_stdio: bool = False,
     project_root: Path | None = None,
+    url: str | None = None,
+    token_file: Path | None = None,
+    timeout: float = 15.0,
 ) -> dict[str, Any]:
+    if url is not None:
+        # Remote diagnostics must not initialize a second local authority.
+        from .http_probe import run_http_probe
+
+        return asyncio.run(run_http_probe(url, token_file=token_file, timeout=timeout))
     resolved_project_root = (project_root or Path(__file__).resolve().parents[2]).resolve()
     config_path = resolve_config_path()
     bridge_home = resolve_bridge_home()
@@ -49,6 +58,18 @@ def run_doctor(
     hardened = operating_profile == "hardened-local"
 
     checks = [
+        _deployment_configuration_check(),
+        _build_check(
+            name="package_contract",
+            ok=True,
+            status="pass",
+            detail="Installed AMB package and expected public contract.",
+            package_version=package_version(),
+            expected_schema_version=CURRENT_SCHEMA_VERSION,
+            expected_tool_count=len(PUBLIC_TOOL_NAMES),
+            expected_tool_schema_sha256=PUBLIC_TOOL_SCHEMA_SHA256,
+            transport="stdio",
+        ),
         _build_check(
             name="operating_profile",
             ok=profile_error is None,
@@ -154,7 +175,14 @@ def run_verify(
     *,
     project_root: Path | None = None,
     runtime_dir: Path | None = None,
+    url: str | None = None,
+    token_file: Path | None = None,
+    timeout: float = 15.0,
 ) -> dict[str, Any]:
+    if url is not None:
+        from .http_probe import run_http_probe
+
+        return asyncio.run(run_http_probe(url, token_file=token_file, timeout=timeout))
     resolved_project_root = (project_root or Path(__file__).resolve().parents[2]).resolve()
     if runtime_dir is None:
         with TemporaryDirectory(prefix="amb-verify-") as temp_dir:
@@ -211,6 +239,28 @@ def _config_path_check(config_path: Path) -> dict[str, Any]:
         status="pass",
         detail="Config file exists and is readable.",
         path=str(config_path),
+    )
+
+
+def _deployment_configuration_check() -> dict[str, Any]:
+    from .deployment_config import HttpTransportConfig
+
+    try:
+        config = HttpTransportConfig.from_env()
+    except (OSError, ValueError):
+        return _build_check(
+            name="http_deployment_configuration",
+            ok=False,
+            status="fail",
+            detail="Invalid HTTP deployment configuration; check bind, hosts/origins, and token file settings.",
+        )
+    return _build_check(
+        name="http_deployment_configuration",
+        ok=True,
+        status="pass",
+        detail="Resolved optional HTTP exposure settings; this is not proof that an HTTP listener is running.",
+        report=config.as_report(),
+        default_transport="stdio",
     )
 
 
@@ -311,15 +361,19 @@ def _permission_check(name: str, path: Path, *, directory: bool, hardened: bool)
 
 def _storage_location_check(bridge_home: Path, db_path: Path, *, hardened: bool) -> dict[str, Any]:
     warnings = sorted({*path_storage_warnings(bridge_home), *path_storage_warnings(db_path)})
+    filesystem = inspect_filesystem(db_path)
+    if filesystem["classification"] != "local":
+        warnings.append(f"database-filesystem-{filesystem['classification']}")
     status: Literal["pass", "warn", "fail"] = "fail" if warnings and hardened else "warn" if warnings else "pass"
     return _build_check(
         name="storage_location",
         ok=not warnings or not hardened,
         status=status,
-        detail="Bridge paths do not look like sync or network-share locations."
+        detail="Database filesystem is classified local; no network/sync path warning."
         if not warnings
-        else "Bridge paths appear to use a sync/network location; SQLite WAL is safest on a local filesystem.",
+        else "Database storage is unsafe or unverified; keep SQLite WAL on verified local storage.",
         warnings=warnings,
+        filesystem=filesystem,
     )
 
 

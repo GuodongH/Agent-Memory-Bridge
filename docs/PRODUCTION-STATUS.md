@@ -6,19 +6,21 @@ This page is the canonical reference for **checked-in current-source facts**: im
 
 | Field | Current fact |
 |---|---|
-| Package/source version | `0.33.0` |
+| Package/source version | `0.34.0` |
 | Durable schema | v12 |
 | Public MCP surface | Exactly 17 public MCP tools |
 | Public tool-schema digest | `24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8` |
-| Runtime model | Local stdio MCP over SQLite/WAL; FTS5 and optional local embeddings are derived indexes |
+| Runtime model | Default local stdio and optional standard Streamable HTTP over one host-local SQLite/WAL authority; FTS5 and optional embeddings are derived indexes |
 
-Current source test collection: `1059 tests`
+Current source test collection: `1107 tests`
 
 > A tag is not a GitHub Release, and live CI or package-index state is not host certification, a distribution guarantee, or a productivity result. Installation guidance retains explicit publication and source-checkout gates.
 
 ## Distribution Status
 
-The `0.32.1` source line introduced the release-side contract for PyPI distribution. Current source `0.33.0` uses the same publication route: a published GitHub Release whose tag matches `v<project.version>` can build and verify distributions, then publish through PyPI Trusted Publishing with GitHub OIDC. No PyPI API token is stored in the repository workflow. Live PyPI package availability is external state and is not asserted by this checked-in document.
+The `0.32.1` source line introduced the release-side contract for PyPI distribution. Current source `0.34.0` uses the same publication route: a published GitHub Release whose tag matches `v<project.version>` can build and verify distributions, then publish through PyPI Trusted Publishing with GitHub OIDC. No PyPI API token is stored in the repository workflow. The container workflow builds and tests the immutable release-event SHA before GHCR publication. Live package/image availability is external state and is not asserted by this checked-in document.
+
+The `0.34.0` release adds an optional official Streamable HTTP deployment surface, local-filesystem deployment guards, HTTP-aware doctor/verify, and a gated container publication path. It keeps durable schema v12, exactly 17 public MCP tools, and the no-automatic-learning boundary. Live package/image availability and production NAS cutover remain external, owner-gated operations. The [frozen deployment contract](evidence/v0.34.0-remote-authority/CONTRACT.md) records the evaluation obligations for this line.
 
 The `0.33.0` release operationalizes the existing product boundary: fresh-session first-win evidence, MCP 2.x floor/latest compatibility gates, cross-platform process-liveness validation, clearer public error semantics, and a documented single-authority multi-machine topology. It keeps durable schema v12, exactly 17 public MCP tools, and the no-automatic-learning boundary.
 
@@ -29,6 +31,10 @@ The `v0.27.4` tag identifies the historical source snapshot `e8210cb204e501650a5
 The `v0.28.0` tag identifies the historical release merge snapshot `c6e3568a59852c5b589d6aba00b89ab580c228e6`. This is a stable historical release fact, not a claim about the current source head or current publication state.
 
 ## Implemented Capability Summary
+
+### v0.34 remote authority deployment
+
+V0.34 productizes optional remote deployment in the official package without expanding durable memory authority. Local stdio remains the default. The same 17-tool MCP server can serve standard Streamable HTTP. One host keeps SQLite/WAL on a verified local filesystem; remote clients call that authority instead of opening a network-mounted database. Official Docker/Compose artifacts use a non-root process, a host-local volume, and a readiness check that does not expose memory contents. `doctor`/`verify` can probe HTTP reachability without creating a local fallback writer. Production replacement of an existing NAS authority remains a separate owner-approved operation.
 
 ### v0.33 operationalization
 

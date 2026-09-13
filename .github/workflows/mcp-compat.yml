@@ -38,6 +38,14 @@ jobs:
           tests/test_v026_dual_era.py
           tests/test_cli_verify.py
           tests/test_cli_doctor.py
+          tests/test_http_transport.py
+          tests/test_http_probe.py
+
+      - name: Prove HTTP parity and exact large export on the SDK floor
+        run: >
+          python scripts/check_http_deployment.py
+          --server-python "$(command -v python)"
+          --runtime-dir "$RUNNER_TEMP/amb-floor-http"
 
       - name: Prove concurrent writes and process cleanup
         run: >
@@ -77,6 +85,14 @@ jobs:
           tests/test_v026_dual_era.py
           tests/test_cli_verify.py
           tests/test_cli_doctor.py
+          tests/test_http_transport.py
+          tests/test_http_probe.py
+
+      - name: Prove HTTP parity and exact large export on latest SDK
+        run: >
+          python scripts/check_http_deployment.py
+          --server-python "$(command -v python)"
+          --runtime-dir "$RUNNER_TEMP/amb-latest-http"
 
       - name: Prove concurrent writes and process cleanup
         run: >
