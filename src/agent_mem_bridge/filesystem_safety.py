@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import os
 import re
 import stat
@@ -131,28 +132,124 @@ def _classify_filesystem_type(filesystem_type: str) -> str:
     return "unknown"
 
 
+def _oserror_resolution_reason(exc: OSError) -> str:
+    if getattr(exc, "errno", None) == errno.ELOOP:
+        return "SymlinkLoop"
+    winerror = getattr(exc, "winerror", None)
+    if winerror in {1920, 1921}:
+        return "SymlinkLoop"
+    return type(exc).__name__
+
+
+def _unknown_filesystem_report(
+    path: Path,
+    *,
+    resolved_path: str | None,
+    source: str,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "resolved_path": resolved_path,
+        "classification": "unknown",
+        "type": None,
+        "filesystem_type": None,
+        "mountpoint": None,
+        "evidence": {"source": source, "reason": reason},
+    }
+
+
+def _stat_device_id(st_dev: int) -> str | None:
+    """Return Linux mountinfo ``major:minor`` when POSIX helpers exist.
+
+    Windows and other hosts without ``os.major``/``os.minor`` must not crash.
+    Missing helpers skip device matching; they do not classify a network
+    filesystem as local.
+    """
+
+    major = getattr(os, "major", None)
+    minor = getattr(os, "minor", None)
+    if not callable(major) or not callable(minor):
+        return None
+    try:
+        return f"{major(st_dev)}:{minor(st_dev)}"
+    except (OverflowError, OSError, TypeError, ValueError):
+        return None
+
+
+def _symlink_loop_reason(path: Path) -> str | None:
+    """Return a stable reason if resolving *path* would follow a symlink cycle."""
+
+    seen: set[tuple[str, int, int]] = set()
+    current = Path(path)
+    for _ in range(1024):
+        try:
+            status = current.lstat()
+        except FileNotFoundError:
+            parent = current.parent
+            if parent == current:
+                return None
+            current = parent
+            continue
+        except OSError as exc:
+            return _oserror_resolution_reason(exc)
+        if stat.S_ISLNK(status.st_mode):
+            identity = (
+                os.path.normcase(os.path.abspath(str(current))),
+                int(status.st_dev),
+                int(status.st_ino),
+            )
+            if identity in seen:
+                return "SymlinkLoop"
+            seen.add(identity)
+            try:
+                target = os.readlink(current)
+            except OSError as exc:
+                return _oserror_resolution_reason(exc)
+            current = Path(target) if os.path.isabs(target) else current.parent.joinpath(target)
+            continue
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+    return "SymlinkLoop"
+
+
 def inspect_filesystem(path: Path) -> dict[str, Any]:
     """Classify the mounted filesystem serving *path* without mutating it.
 
     Linux mount metadata is authoritative when it is available.  The target is
     resolved first so a database below an existing symlink is matched against
-    its actual mount.  Unsupported platforms, unreadable metadata, and
-    unrecognized filesystem types remain ``unknown`` rather than safe.
+    its actual mount.  Unsupported platforms, unreadable metadata, symlink
+    loops, and unrecognized filesystem types remain ``unknown`` rather than
+    safe.
     """
 
     candidate = Path(path).expanduser()
+    loop_reason = _symlink_loop_reason(candidate)
+    if loop_reason is not None:
+        return _unknown_filesystem_report(
+            candidate,
+            resolved_path=None,
+            source="path-resolution",
+            reason=loop_reason,
+        )
     try:
         resolved_path = candidate.resolve(strict=False)
-    except (OSError, RuntimeError) as exc:
-        return {
-            "path": str(candidate),
-            "resolved_path": None,
-            "classification": "unknown",
-            "type": None,
-            "filesystem_type": None,
-            "mountpoint": None,
-            "evidence": {"source": "path-resolution", "reason": type(exc).__name__},
-        }
+    except OSError as exc:
+        return _unknown_filesystem_report(
+            candidate,
+            resolved_path=None,
+            source="path-resolution",
+            reason=_oserror_resolution_reason(exc),
+        )
+    except RuntimeError as exc:
+        return _unknown_filesystem_report(
+            candidate,
+            resolved_path=None,
+            source="path-resolution",
+            reason=type(exc).__name__,
+        )
 
     try:
         entries = _mountinfo_entries(_read_mountinfo())
@@ -193,8 +290,7 @@ def inspect_filesystem(path: Path) -> dict[str, Any]:
     selection = "latest-mount-id"
     if existing_path is not None:
         try:
-            device = existing_path.stat().st_dev
-            visible_device = f"{os.major(device)}:{os.minor(device)}"
+            visible_device = _stat_device_id(existing_path.stat().st_dev)
         except OSError:
             visible_device = None
         if visible_device is not None:
