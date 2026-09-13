@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -116,14 +115,33 @@ def test_symlink_loop_is_unknown_instead_of_raising(tmp_path: Path) -> None:
     report = inspect_filesystem(loop / "bridge.db")
 
     assert report["classification"] == "unknown"
-    assert report["evidence"] == {"source": "path-resolution", "reason": "RuntimeError"}
+    assert report["evidence"] == {"source": "path-resolution", "reason": "SymlinkLoop"}
+
+
+def test_missing_posix_device_helpers_keep_network_classification(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    remote_mount = tmp_path / "remote"
+    remote_mount.mkdir()
+    monkeypatch.setattr(filesystem_safety, "_stat_device_id", lambda _device: None)
+    monkeypatch.setattr(
+        filesystem_safety,
+        "_read_mountinfo",
+        lambda: _mountinfo_line(remote_mount, "nfs4"),
+    )
+
+    report = inspect_filesystem(remote_mount / "new" / "bridge.db")
+
+    assert report["classification"] == "network"
+    assert report["filesystem_type"] == "nfs4"
+    assert report["evidence"]["selection"] == "latest-mount-id"
 
 
 def test_visible_overmount_device_wins_over_hidden_local_mount(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     mountpoint = tmp_path / "mounted"
     mountpoint.mkdir()
-    visible_device = mountpoint.stat().st_dev
-    visible_device_name = f"{os.major(visible_device)}:{os.minor(visible_device)}"
+    visible_device_name = filesystem_safety._stat_device_id(mountpoint.stat().st_dev) or "9:99"
+    monkeypatch.setattr(filesystem_safety, "_stat_device_id", lambda _device: visible_device_name)
     monkeypatch.setattr(
         filesystem_safety,
         "_read_mountinfo",
