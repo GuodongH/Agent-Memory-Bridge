@@ -8,6 +8,15 @@ The v0.28.0 tagged archive route, when using that tag, is:
 
 This document records the durable capability milestones in Agent Memory Bridge (AMB). It is **not** a release-by-release ledger, a current-status page, or a substitute for detailed proof artifacts. Current implementation facts belong in [Production Status](docs/PRODUCTION-STATUS.md); future work belongs in the [Roadmap](docs/ROADMAP.md); detailed development chronology remains in Git history and published GitHub Releases where available.
 
+## v0.34.1 — Filesystem Portability Patch
+
+- Keeps local-filesystem deployment guards fail-closed on Windows and Python 3.13.
+- Windows no longer calls missing POSIX `os.major`/`os.minor` helpers; known NFS/CIFS/SMB/SSHFS classifications stay rejected.
+- Symlink resolution loops classify as `unknown` instead of walking to a seemingly local ancestor.
+- Schema remains v12. The public MCP surface remains exactly 17 tools. There is no automatic learning and no MCP tool #18.
+
+See [v0.34.1 announcement](docs/v0.34.1-announcement.md).
+
 ## v0.34.0 — Remote Authority Deployment
 
 - Optional SDK Streamable HTTP deployment reuses the same 17 tools and schema v12; stdio remains the default.
@@ -107,6 +116,7 @@ See [v0.32.1 announcement](docs/v0.32.1-announcement.md) for the distribution co
 | v0.32.1 source/release line | **PyPI Distribution** | The release line adds a PyPI install path and release-triggered Trusted Publishing without changing runtime behavior, schema, public MCP surface, or authority boundaries. | [v0.32.1 announcement](docs/v0.32.1-announcement.md), [Production Status](docs/PRODUCTION-STATUS.md) |
 | v0.32.2 source/release line | **Governed Project Memory** | Repositions AMB around governed project memory, synchronizes the new hero and bilingual README story, and makes install-versus-client-registration boundaries explicit without changing runtime behavior or authority. | [v0.32.2 announcement](docs/v0.32.2-announcement.md), [Production Status](docs/PRODUCTION-STATUS.md), [Integrations](docs/INTEGRATIONS.md) |
 | v0.33.0 source/release line | **Operationalization** | Fresh-session first-win evidence, MCP 2.x floor/latest gates, cross-platform liveness semantics, public/internal error separation, and single-authority multi-machine guidance strengthen release and operational confidence without expanding durable authority. | [v0.33.0 announcement](docs/v0.33.0-announcement.md), [First-win acceptance](docs/FIRST-WIN-ACCEPTANCE.md), [MCP compatibility](docs/MCP-2026-COMPATIBILITY.md) |
+| v0.34.1 source/release line | **Filesystem Portability Patch** | Fail-closed Windows and symlink-loop filesystem classification on the v0.34 remote-authority line, preserving schema v12 and exactly 17 tools. | [v0.34.1 announcement](docs/v0.34.1-announcement.md), [Remote deployment](docs/REMOTE-DEPLOYMENT.md) |
 | v0.34.0 source/release line | **Remote Authority Deployment** | Optional SDK Streamable HTTP, local-filesystem deployment guards, official container path, and HTTP doctor/verify preserve schema v12 and exactly 17 tools. Production NAS cutover remains a separate owner-approved operation. | [v0.34.0 announcement](docs/v0.34.0-announcement.md), [Remote deployment](docs/REMOTE-DEPLOYMENT.md), [Remote migration](docs/REMOTE-MIGRATION.md) |
 
 ## Historical Evidence Retained in the Repository
@@ -124,5 +134,6 @@ The following versioned documents remain because they are a detailed reproducibi
 | [v0.32.2 announcement](docs/v0.32.2-announcement.md) | Canonical release-notes artifact for governed project-memory positioning and explicit client-registration onboarding. |
 | [v0.33.0 announcement](docs/v0.33.0-announcement.md) | Canonical release-notes artifact for v0.33 operationalization and release evidence. |
 | [v0.34.0 announcement](docs/v0.34.0-announcement.md) | Canonical release-notes artifact for v0.34 remote authority deployment. |
+| [v0.34.1 announcement](docs/v0.34.1-announcement.md) | Canonical release-notes artifact for the v0.34.1 filesystem portability patch. |
 
 The retained historical documents describe their own snapshots. They do not establish current version, CI, release, or product-status facts.

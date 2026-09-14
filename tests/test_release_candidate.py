@@ -102,7 +102,7 @@ def test_current_source_contract_rejects_automatic_learning_claim_drift(tmp_path
 def test_readmes_use_v034_release_identity() -> None:
     english = (ROOT / "README.md").read_text(encoding="utf-8")
     chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
-    assert CURRENT == "0.34.0"
+    assert CURRENT == "0.34.1"
     assert f"Current package/source version: `{CURRENT}`." in english
     assert f"当前包/源码版本：`{CURRENT}`。" in chinese
     assert f"agent-memory-bridge=={CURRENT}" in english
@@ -153,6 +153,8 @@ def test_historical_v0274_evidence_remains_historical() -> None:
     assert "[v0.33.0 announcement](docs/v0.33.0-announcement.md)" in changelog
     assert "v0.34.0 source/release line" in changelog
     assert "[v0.34.0 announcement](docs/v0.34.0-announcement.md)" in changelog
+    assert "v0.34.1 source/release line" in changelog
+    assert "[v0.34.1 announcement](docs/v0.34.1-announcement.md)" in changelog
     assert "v0.28.0 candidate" not in changelog
 
 

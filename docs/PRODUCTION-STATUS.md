@@ -6,7 +6,7 @@ This page is the canonical reference for **checked-in current-source facts**: im
 
 | Field | Current fact |
 |---|---|
-| Package/source version | `0.34.0` |
+| Package/source version | `0.34.1` |
 | Durable schema | v12 |
 | Public MCP surface | Exactly 17 public MCP tools |
 | Public tool-schema digest | `24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8` |
@@ -18,7 +18,9 @@ Current source test collection: `1108 tests`
 
 ## Distribution Status
 
-The `0.32.1` source line introduced the release-side contract for PyPI distribution. Current source `0.34.0` uses the same publication route: a published GitHub Release whose tag matches `v<project.version>` can build and verify distributions, then publish through PyPI Trusted Publishing with GitHub OIDC. No PyPI API token is stored in the repository workflow. The container workflow builds and tests the immutable release-event SHA before GHCR publication. Live package/image availability is external state and is not asserted by this checked-in document.
+The `0.32.1` source line introduced the release-side contract for PyPI distribution. Current source `0.34.1` uses the same publication route: a published GitHub Release whose tag matches `v<project.version>` can build and verify distributions, then publish through PyPI Trusted Publishing with GitHub OIDC. No PyPI API token is stored in the repository workflow. The container workflow builds and tests the immutable release-event SHA before GHCR publication. Live package/image availability is external state and is not asserted by this checked-in document.
+
+The `0.34.1` release is a portability/reliability patch on that remote-authority line. It keeps filesystem classification fail-closed on Windows and symlink-resolution loops, without changing durable schema v12, the 17-tool public MCP surface, or the no-automatic-learning boundary.
 
 The `0.34.0` release adds an optional official Streamable HTTP deployment surface, local-filesystem deployment guards, HTTP-aware doctor/verify, and a gated container publication path. It keeps durable schema v12, exactly 17 public MCP tools, and the no-automatic-learning boundary. Live package/image availability and production NAS cutover remain external, owner-gated operations. The [frozen deployment contract](evidence/v0.34.0-remote-authority/CONTRACT.md) records the evaluation obligations for this line.
 
