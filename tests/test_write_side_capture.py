@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -238,6 +239,141 @@ def test_durable_duplicate_and_stale_correction_have_distinct_actions(tmp_path: 
         unchanged = conn.execute("SELECT content FROM memories WHERE id = ?", (stale["id"],)).fetchone()
     assert unchanged["content"] == "Capture may promote candidates automatically after a passing test."
     assert store.recall(namespace="project:capture-demo", query="promotion stays explicit", limit=5)["count"] == 0
+
+
+def test_stale_exact_durable_claim_enters_review_instead_of_reject(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "bridge.db", log_dir=tmp_path / "logs")
+    claim = "Use the hidden review lane again after the old durable copy is superseded."
+    stale = store.store(
+        namespace="project:capture-demo",
+        kind="memory",
+        title="Superseded rule",
+        content=claim,
+        tags=["status:stale"],
+    )
+
+    receipt = capture_lifecycle_candidates(
+        store,
+        _event(
+            source_task_id="task-revalidate",
+            visible_artifacts=[
+                _decision_artifact(
+                    artifact_id="revalidate-1",
+                    claim=claim,
+                    reason="A later session re-established the same claim after the old copy was marked stale.",
+                    evidence_refs=["visible:session_stop:revalidate-1"],
+                )
+            ],
+        ),
+    )
+
+    item = receipt["items"][0]
+    assert receipt["disposition"] == "captured"
+    assert receipt["writes"] == 1
+    assert receipt["automatic_promotion"] is False
+    assert item["disposition"] == "stored"
+    assert item["recommended_action"] == "revalidate"
+    assert item["relation"] == "revalidation"
+    assert item["candidate_status"] == "needs_review"
+    assert item["hidden_from_ordinary_recall"] is True
+    assert "stale_durable_exact_claim" in item["reason_codes"]
+    rows = _candidate_rows(store, "project:capture-demo")
+    assert len(rows) == 1
+    assert rows[0]["id"] == item["record_id"]
+    assert stale["id"] in rows[0]["content"]
+    assert "recommended_action: revalidate" in rows[0]["content"]
+    assert "relation: revalidation" in rows[0]["content"]
+    with store._connect() as conn:
+        unchanged = conn.execute(
+            "SELECT content, tags_json, is_learning_candidate FROM memories WHERE id = ?",
+            (stale["id"],),
+        ).fetchone()
+    assert unchanged["content"] == claim
+    assert unchanged["is_learning_candidate"] == 0
+    assert "status:stale" in unchanged["tags_json"]
+    visible = store.recall(namespace="project:capture-demo", query=claim, limit=10)
+    assert stale["id"] in {hit["id"] for hit in visible["items"]}
+    assert item["record_id"] not in {hit["id"] for hit in visible["items"]}
+
+    current_claim = "Keep the reviewed rule in force when a newer copy is only marked superseded."
+    current = store.store(
+        namespace="project:capture-demo",
+        kind="memory",
+        title="Current rule",
+        content=f"claim: {current_claim}\ngovernance_status: current",
+    )
+    store.store(
+        namespace="project:capture-demo",
+        kind="memory",
+        title="Newer stale copy",
+        content=f"claim: {current_claim}\ngovernance_status: superseded",
+        tags=["status:superseded"],
+    )
+    still_current = capture_lifecycle_candidates(
+        store,
+        _event(
+            source_task_id="task-current",
+            visible_artifacts=[
+                _decision_artifact(
+                    artifact_id="current-1",
+                    claim=current_claim,
+                    reason="A current durable copy still exists, so this is not a fresh revalidation.",
+                    evidence_refs=["visible:session_stop:current-1"],
+                )
+            ],
+        ),
+    )
+    assert still_current["writes"] == 0
+    assert still_current["items"][0]["disposition"] == "already_durable"
+    assert still_current["items"][0]["recommended_action"] == "reject"
+    assert still_current["items"][0]["record_id"] == current["id"]
+    assert len(_candidate_rows(store, "project:capture-demo")) == 1
+
+
+def test_concurrent_durable_writer_does_not_report_automatic_promotion(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "bridge.db", log_dir=tmp_path / "logs")
+    entered = threading.Event()
+    release = threading.Event()
+    writer_result: dict[str, str] = {}
+    original = store.store_learning_candidate
+
+    def paused_store(candidate, decision, candidate_status="needs_review"):
+        entered.set()
+        assert release.wait(timeout=5)
+        return original(candidate, decision, candidate_status=candidate_status)
+
+    store.store_learning_candidate = paused_store
+
+    def writer() -> None:
+        assert entered.wait(timeout=5)
+        other = MemoryStore(store.db_path, log_dir=tmp_path / "writer-logs")
+        stored = other.store(
+            namespace="project:capture-demo",
+            kind="memory",
+            title="Concurrent durable note",
+            content="A normal writer stored this durable note while capture was in progress.",
+        )
+        writer_result["id"] = str(stored["id"])
+        release.set()
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    receipt = capture_lifecycle_candidates(store, _event())
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert writer_result["id"]
+    assert receipt["automatic_promotion"] is False
+    assert receipt["promotions"] == 0
+    assert receipt["writes"] == 1
+    assert receipt["items"][0]["candidate_status"] == "needs_review"
+    visible = store.recall(
+        namespace="project:capture-demo",
+        query="normal writer stored this durable note",
+        limit=5,
+    )
+    assert writer_result["id"] in {hit["id"] for hit in visible["items"]}
+    assert receipt["items"][0]["record_id"] not in {hit["id"] for hit in visible["items"]}
 
 
 def test_unsafe_or_unbounded_input_writes_nothing(tmp_path: Path) -> None:

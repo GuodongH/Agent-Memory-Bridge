@@ -34,6 +34,10 @@ SUPPORTED_BOUNDARIES = frozenset({"pre_compaction", "session_stop", "explicit_ha
 CAPTURE_CLASSES = frozenset({"decision", "constraint", "gotcha", "user_correction", "handoff"})
 OPEN_CANDIDATE_STATUSES = frozenset({"pending", "needs_review"})
 STALE_MARKERS = frozenset({"stale", "superseded", "replaced", "expired"})
+STALE_REVALIDATION_PLAN = (
+    "Lifecycle capture does not revive or mutate the stale durable row. "
+    "Reviewer must revalidate, replace, or reject this fresh confirmation explicitly."
+)
 
 MAX_ARTIFACTS = 8
 MAX_EVIDENCE_REFS = 8
@@ -82,10 +86,10 @@ def capture_lifecycle_candidates(store: Any, event: Mapping[str, Any]) -> dict[s
 
     artifacts = event.get("visible_artifacts")
     assert isinstance(artifacts, list)
-    durable_before = _durable_count(store, namespace)
     index = _load_claim_index(store, namespace)
     items: list[dict[str, Any]] = []
     writes = 0
+    mutations: list[str] = []
     for artifact in artifacts:
         item, wrote = _capture_artifact(
             store,
@@ -94,12 +98,12 @@ def capture_lifecycle_candidates(store: Any, event: Mapping[str, Any]) -> dict[s
             boundary=boundary,
             namespace=namespace,
             index=index,
+            mutations=mutations,
         )
         items.append(item)
         writes += wrote
 
-    durable_after = _durable_count(store, namespace)
-    promoted = durable_after > durable_before
+    promoted = _mutations_promoted_durable(store, mutations)
     receipt = _event_receipt(
         boundary=boundary,
         namespace=namespace,
@@ -150,6 +154,7 @@ def _capture_artifact(
     boundary: str,
     namespace: str,
     index: dict[str, Any],
+    mutations: list[str],
 ) -> tuple[dict[str, Any], int]:
     normalized, reason = _normalize_artifact(artifact, boundary=boundary)
     if normalized is None:
@@ -158,9 +163,9 @@ def _capture_artifact(
 
     _note_conflict_targets(store, namespace, normalized)
     claim_key = _claim_key(normalized["claim"])
-    durable_match = _match(index, claim_key, lane="durable")
-    open_match = _match(index, claim_key, lane="open")
-    if durable_match is not None:
+    durable_matches = _durable_matches(index, claim_key)
+    current_durable = next((item for item in durable_matches if not item.stale), None)
+    if current_durable is not None:
         return (
             _item(
                 normalized["artifact_id"],
@@ -168,12 +173,16 @@ def _capture_artifact(
                 reason_codes=["equivalent_durable_claim"],
                 recommended_action="reject",
                 relation="duplicate",
-                record_id=durable_match.record_id,
+                record_id=current_durable.record_id,
             ),
             0,
         )
+    stale_matches = [item for item in durable_matches if item.stale]
+    if stale_matches:
+        _mark_stale_revalidation(normalized, stale_matches)
+    open_match = _match(index, claim_key, lane="open")
     if open_match is not None:
-        return _strengthen(store, open_match, normalized, boundary=boundary, index=index)
+        return _strengthen(store, open_match, normalized, boundary=boundary, index=index, mutations=mutations)
 
     candidate = _candidate_payload(event, normalized, boundary=boundary, namespace=namespace)
     decision = evaluate_learning_candidate(candidate)
@@ -216,6 +225,7 @@ def _capture_artifact(
             0,
         )
     if record_id:
+        mutations.append(record_id)
         index["claims"].append(_IndexedClaim(claim_key, record_id, "open", False))
     reason_codes = ["new_candidate", *list(normalized["reason_codes"])]
     if index["truncated"]:
@@ -242,7 +252,9 @@ def _strengthen(
     *,
     boundary: str,
     index: dict[str, Any],
+    mutations: list[str],
 ) -> tuple[dict[str, Any], int]:
+    review_action, review_relation = _open_review_action(normalized)
     try:
         changed = _merge_open_candidate(store, match.record_id, normalized, boundary=boundary)
     except (sqlite3.Error, ValueError, json.JSONDecodeError):
@@ -251,8 +263,8 @@ def _strengthen(
                 str(normalized["artifact_id"]),
                 disposition="rejected",
                 reason_codes=["evidence_merge_failed"],
-                recommended_action="merge",
-                relation="duplicate",
+                recommended_action=review_action,
+                relation=review_relation,
                 record_id=match.record_id,
             ),
             0,
@@ -263,14 +275,15 @@ def _strengthen(
                 str(normalized["artifact_id"]),
                 disposition="unchanged_existing",
                 reason_codes=["equivalent_open_candidate"],
-                recommended_action="merge",
-                relation="duplicate",
+                recommended_action=review_action,
+                relation=review_relation,
                 record_id=match.record_id,
                 candidate_status="needs_review",
                 hidden_from_ordinary_recall=True,
             ),
             0,
         )
+    mutations.append(match.record_id)
     if normalized["relation"] == "contradicted":
         index["claims"].append(_IndexedClaim(match.claim_key, match.record_id, "open", match.stale))
     return (
@@ -278,8 +291,8 @@ def _strengthen(
             str(normalized["artifact_id"]),
             disposition="strengthened_existing",
             reason_codes=["equivalent_open_candidate", *list(normalized["reason_codes"])],
-            recommended_action="revise" if normalized["relation"] == "contradicted" else "merge",
-            relation="contradicted" if normalized["relation"] == "contradicted" else "duplicate",
+            recommended_action=review_action,
+            relation=review_relation,
             record_id=match.record_id,
             candidate_status="needs_review",
             hidden_from_ordinary_recall=True,
@@ -318,6 +331,15 @@ def _merge_open_candidate(
             changed |= _set_field(fields, "recommended_action", "revise")
             changed |= _set_field(fields, "relation", "contradicted")
             changed |= _set_field(fields, "supersession_plan", SERVER_SUPERSESSION_PLAN)
+        elif normalized["relation"] == "revalidation" or _field_value(fields, "relation") == "revalidation":
+            changed |= _set_field(fields, "recommended_action", "revalidate")
+            changed |= _set_field(fields, "relation", "revalidation")
+            changed |= _set_field(fields, "supersession_plan", STALE_REVALIDATION_PLAN)
+            changed |= _merge_json_field(
+                fields,
+                "supersedes_record_ids_json",
+                list(normalized.get("supersedes_record_ids") or []),
+            )
         elif _field_value(fields, "relation") != "contradicted":
             changed |= _set_field(fields, "recommended_action", "merge")
             changed |= _set_field(fields, "relation", "duplicate")
@@ -417,6 +439,7 @@ def _candidate_payload(
         "visible_artifact_id": normalized["artifact_id"],
         "visible_artifact_ids": [normalized["artifact_id"]],
         "contradicts_record_ids": list(normalized["contradicts_record_ids"]),
+        "supersedes_record_ids": list(normalized.get("supersedes_record_ids") or []),
         "supersession_plan": normalized["supersession_plan"],
         "domain_tags": [f"capture-{normalized['capture_class']}"],
         "sensitivity": "safe",
@@ -693,17 +716,49 @@ def _match(index: Mapping[str, Any], claim_key: str, *, lane: str) -> _IndexedCl
     return None
 
 
-def _durable_count(store: Any, namespace: str) -> int:
+def _durable_matches(index: Mapping[str, Any], claim_key: str) -> list[_IndexedClaim]:
+    return [item for item in index["claims"] if item.lane == "durable" and item.claim_key == claim_key]
+
+
+def _mark_stale_revalidation(normalized: dict[str, Any], matches: Sequence[_IndexedClaim]) -> None:
+    normalized["recommended_action"] = "revalidate"
+    normalized["relation"] = "revalidation"
+    normalized["supersedes_record_ids"] = sorted({item.record_id for item in matches if item.stale})
+    normalized["supersession_plan"] = STALE_REVALIDATION_PLAN
+    normalized["reason_codes"] = [*list(normalized["reason_codes"]), "stale_durable_exact_claim"]
+
+
+def _open_review_action(normalized: Mapping[str, Any]) -> tuple[str, str]:
+    relation = str(normalized.get("relation") or "")
+    if relation == "contradicted":
+        return "revise", "contradicted"
+    if relation == "revalidation":
+        return "revalidate", "revalidation"
+    return "merge", "duplicate"
+
+
+def _mutations_promoted_durable(store: Any, memory_ids: Sequence[str]) -> bool:
+    """Prove promotion from this capture's own rows, not a namespace count delta.
+
+    Another writer can insert durable memory while capture is running. That row
+    is not one of these ids, so it cannot flip the receipt.
+    """
+
+    unique_ids = list(dict.fromkeys(memory_id for memory_id in memory_ids if memory_id))
+    if not unique_ids:
+        return False
+    placeholders = ", ".join("?" for _ in unique_ids)
     with store._connect() as conn:
-        row = conn.execute(
-            """
-            SELECT COUNT(*) AS count
+        rows = conn.execute(
+            f"""
+            SELECT id, is_learning_candidate
             FROM memories
-            WHERE namespace = ? AND kind = 'memory' AND COALESCE(is_learning_candidate, 0) = 0
+            WHERE id IN ({placeholders})
             """,
-            (namespace,),
-        ).fetchone()
-    return int(row["count"])
+            unique_ids,
+        ).fetchall()
+    candidate_by_id = {str(row["id"]): int(row["is_learning_candidate"] or 0) for row in rows}
+    return any(candidate_by_id.get(memory_id, 1) == 0 for memory_id in unique_ids)
 
 
 def _content_fields(content: str) -> list[tuple[str, str]]:
