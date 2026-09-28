@@ -1,0 +1,429 @@
+{
+  "schema": "memory.write_side_capture_benchmark.v1",
+  "cases": [
+    {
+      "id": "session-stop-decision",
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-decision",
+        "source_task_id": "task-decision",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "decision-1",
+            "artifact_class": "decision",
+            "claim": "Keep write-side capture in the hidden review lane until a person promotes it.",
+            "reason": "The rule is reusable for later sessions and must not become trusted memory automatically.",
+            "evidence_refs": ["visible:session_stop:decision-1"],
+            "scope": "project",
+            "decision": "allow",
+            "would_write": true,
+            "candidate_status": "approved",
+            "authority_class": "context_hint",
+            "tags": ["kind:learning-candidate"],
+            "namespace": "global"
+          }
+        ]
+      },
+      "expect_event_dispositions": ["captured"],
+      "expect_item_dispositions": ["stored"],
+      "expect_recommended_action": ["promote"],
+      "expect_candidate_count": 1,
+      "expect_hidden_query": "hidden review lane until a person promotes"
+    },
+    {
+      "id": "pre-compaction-constraint",
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "pre_compaction",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-constraint",
+        "source_task_id": "task-constraint",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "constraint-1",
+            "artifact_class": "constraint",
+            "claim": "Do not capture a candidate from every tool call or ordinary chat message.",
+            "reason": "Lifecycle capture stays bounded to explicit session boundaries.",
+            "evidence_refs": ["visible:pre_compaction:constraint-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["captured"],
+      "expect_item_dispositions": ["stored"],
+      "expect_candidate_count": 1,
+      "expect_hidden_query": "every tool call or ordinary chat message"
+    },
+    {
+      "id": "post-run-gotcha",
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "post_run",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-gotcha",
+        "source_task_id": "task-gotcha",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "gotcha-1",
+            "artifact_class": "gotcha",
+            "symptom": "Ordinary recall returned a hidden learning candidate",
+            "fix": "Filter learning candidates unless the caller asks for the review lane",
+            "validated": true,
+            "reason": "The failure was reproduced and the fix is the existing recall filter.",
+            "evidence_refs": ["visible:post_run:gotcha-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["captured"],
+      "expect_item_dispositions": ["stored"],
+      "expect_candidate_count": 1,
+      "expect_hidden_query": "Filter learning candidates unless the caller asks"
+    },
+    {
+      "id": "explicit-handoff",
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "explicit_handoff",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-handoff",
+        "source_task_id": "task-handoff",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "handoff-1",
+            "artifact_class": "handoff",
+            "claim": "The next session should keep captured proposals in the existing learning-candidate lane.",
+            "reason": "The handoff fact is bounded to this project and does not authorize promotion.",
+            "evidence_refs": ["visible:explicit_handoff:handoff-1"],
+            "scope": "project"
+          }
+        ]
+      },
+      "expect_event_dispositions": ["captured"],
+      "expect_item_dispositions": ["stored"],
+      "expect_candidate_count": 1,
+      "expect_hidden_query": "existing learning-candidate lane"
+    },
+    {
+      "id": "duplicate-open-candidate",
+      "events": [
+        {
+          "schema": "memory.lifecycle_capture_event.v1",
+          "boundary": "session_stop",
+          "namespace": "project:capture-bench",
+          "source_runtime": "codex",
+          "source_session_id": "session-duplicate",
+          "source_task_id": "task-duplicate",
+          "visible_artifacts": [
+            {
+              "schema": "memory.visible_artifact.v1",
+              "artifact_id": "duplicate-1",
+              "artifact_class": "decision",
+              "claim": "Use the existing review queue for captured candidates instead of creating a second lane.",
+              "reason": "A second lane would fragment review and hide the same claim twice.",
+              "evidence_refs": ["visible:session_stop:duplicate-1"]
+            }
+          ]
+        },
+        {
+          "schema": "memory.lifecycle_capture_event.v1",
+          "boundary": "session_stop",
+          "namespace": "project:capture-bench",
+          "source_runtime": "codex",
+          "source_session_id": "session-duplicate",
+          "source_task_id": "task-duplicate-2",
+          "visible_artifacts": [
+            {
+              "schema": "memory.visible_artifact.v1",
+              "artifact_id": "duplicate-2",
+              "artifact_class": "decision",
+              "claim": "Use the existing review queue for captured candidates instead of creating a second lane.",
+              "reason": "Later evidence should strengthen the open candidate rather than fragment it.",
+              "evidence_refs": ["visible:session_stop:duplicate-2"]
+            }
+          ]
+        }
+      ],
+      "expect_event_dispositions": ["captured", "captured"],
+      "expect_item_dispositions": ["stored", "strengthened_existing"],
+      "expect_recommended_action": ["promote", "merge"],
+      "expect_candidate_count": 1,
+      "expect_hidden_query": "creating a second lane"
+    },
+    {
+      "id": "duplicate-durable-memory",
+      "seed": [
+        {
+          "namespace": "project:capture-bench",
+          "title": "Existing decision",
+          "content": "Keep write-side proposals review-only when the same claim is already durable."
+        }
+      ],
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-durable",
+        "source_task_id": "task-durable",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "durable-1",
+            "artifact_class": "decision",
+            "claim": "Keep write-side proposals review-only when the same claim is already durable.",
+            "reason": "Repeating a durable claim should not create another candidate.",
+            "evidence_refs": ["visible:session_stop:durable-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["no_capture"],
+      "expect_item_dispositions": ["already_durable"],
+      "expect_recommended_action": ["reject"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "stale-user-correction",
+      "seed": [
+        {
+          "namespace": "project:capture-bench",
+          "title": "Stale guidance",
+          "content": "Capture may promote candidates automatically after a passing test.",
+          "tags": ["status:stale"]
+        }
+      ],
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "explicit_handoff",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-correction",
+        "source_task_id": "task-correction",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "correction-1",
+            "artifact_class": "user_correction",
+            "claim": "Capture must not promote candidates automatically because promotion stays an explicit review action.",
+            "reason": "The user corrected stale guidance that would bypass the review lane.",
+            "evidence_refs": ["visible:explicit_handoff:correction-1"],
+            "contradicts_record_ids": ["__SEED_0__"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["captured"],
+      "expect_item_dispositions": ["stored"],
+      "expect_recommended_action": ["revise"],
+      "expect_candidate_count": 1,
+      "expect_explicit_recalled": true,
+      "expect_hidden_query": "promotion stays an explicit review action"
+    },
+    {
+      "id": "negative-status-chatter",
+      "negative_control": true,
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-status",
+        "source_task_id": "task-status",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "status-1",
+            "artifact_class": "decision",
+            "claim": "done",
+            "reason": "This is only status chatter from the session.",
+            "evidence_refs": ["visible:session_stop:status-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["no_capture"],
+      "expect_item_dispositions": ["rejected"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-unvalidated-gotcha",
+      "negative_control": true,
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "post_run",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-unvalidated",
+        "source_task_id": "task-unvalidated",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "gotcha-unvalidated",
+            "artifact_class": "gotcha",
+            "symptom": "A test failed during the run",
+            "fix": "Retry the same command without new evidence",
+            "validated": false,
+            "reason": "The failure was not validated so it must not be captured.",
+            "evidence_refs": ["visible:post_run:gotcha-unvalidated"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["no_capture"],
+      "expect_item_dispositions": ["rejected"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-summary-class",
+      "negative_control": true,
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "pre_compaction",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-summary",
+        "source_task_id": "task-summary",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "summary-1",
+            "artifact_class": "summary",
+            "claim": "This session discussed many topics and should be summarized in full.",
+            "reason": "Generic conversation summary is outside the v1 capture classes.",
+            "evidence_refs": ["visible:pre_compaction:summary-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["no_capture"],
+      "expect_item_dispositions": ["rejected"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-empty-boundary",
+      "negative_control": true,
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-empty",
+        "source_task_id": "task-empty",
+        "visible_artifacts": []
+      },
+      "expect_event_dispositions": ["no_capture"],
+      "expect_item_dispositions": [],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-transcript",
+      "negative_control": true,
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-transcript",
+        "source_task_id": "task-transcript",
+        "messages": [{"role": "user", "content": "please remember this whole chat"}],
+        "visible_artifacts": []
+      },
+      "expect_event_dispositions": ["rejected"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-hidden-reasoning",
+      "negative_control": true,
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "pre_compaction",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-reasoning",
+        "source_task_id": "task-reasoning",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "reasoning-1",
+            "artifact_class": "decision",
+            "claim": "Keep hidden reasoning out of durable memory and review candidates.",
+            "reason": "The payload also carries a private reasoning field that must not be stored.",
+            "chain_of_thought": "private step by step reasoning that must never be archived",
+            "evidence_refs": ["visible:pre_compaction:reasoning-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["rejected"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-secret",
+      "negative_control": true,
+      "secret_absent": "sk-1234567890abcdef",
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-secret",
+        "source_task_id": "task-secret",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "secret-1",
+            "artifact_class": "decision",
+            "claim": "Store API key sk-1234567890abcdef for the deployment bot and reuse it later.",
+            "reason": "This looks reusable but it contains a credential and must be dropped.",
+            "evidence_refs": ["visible:session_stop:secret-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["no_capture"],
+      "expect_item_dispositions": ["rejected"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-unsupported-boundary",
+      "negative_control": true,
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "every_message",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-every",
+        "source_task_id": "task-every",
+        "visible_artifacts": []
+      },
+      "expect_event_dispositions": ["rejected"],
+      "expect_candidate_count": 0
+    },
+    {
+      "id": "negative-explicit-store-remains",
+      "negative_control": true,
+      "expect_explicit_recalled": true,
+      "seed": [
+        {
+          "namespace": "project:capture-bench",
+          "title": "Explicit store",
+          "content": "Explicit user store remains visible after a lifecycle boundary captures nothing."
+        }
+      ],
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-explicit",
+        "source_task_id": "task-explicit",
+        "visible_artifacts": []
+      },
+      "expect_event_dispositions": ["no_capture"],
+      "expect_item_dispositions": [],
+      "expect_candidate_count": 0
+    }
+  ]
+}
