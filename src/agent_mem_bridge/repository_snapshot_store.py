@@ -70,8 +70,7 @@ def _safe_remote_identity(remote: str) -> str | None:
     if value.startswith(("/", "./", "../")):
         return f"file/{Path(value).expanduser().resolve().as_posix().rstrip('/').removesuffix('.git')}"
     if re.match(r"^[A-Za-z]:[\\\\/]", value):
-        normalized_path = value.replace("\\\\", "/").rstrip("/").removesuffix(".git")
-        return f"file/{normalized_path.casefold()}"
+        return _normalize_windows_local_remote(value)
     if "@" in value and ":" in value:
         user_host, path = value.split(":", 1)
         host = user_host.rsplit("@", 1)[-1].strip()
@@ -79,6 +78,16 @@ def _safe_remote_identity(remote: str) -> str | None:
         if host and path:
             return f"{host.casefold()}/{path.removesuffix('.git')}"
     return None
+
+
+def _normalize_windows_local_remote(value: str) -> str:
+    """Collapse slash, case, and trailing-.git spellings of one Windows local remote."""
+    normalized = value.replace("\\", "/")
+    normalized = re.sub(r"/{2,}", "/", normalized).rstrip("/")
+    normalized = normalized.casefold()
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4].rstrip("/")
+    return f"file/{normalized}"
 
 
 def repository_identity(root: Path) -> dict[str, str]:
