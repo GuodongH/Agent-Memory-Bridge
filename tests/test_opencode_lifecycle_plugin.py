@@ -21,7 +21,7 @@ def _require_node() -> str:
     return node
 
 
-def _install_fake_python(bin_dir: Path) -> None:
+def _install_fake_python(bin_dir: Path) -> Path:
     fake = bin_dir / "fake_hook.py"
     fake.write_text(
         """\
@@ -44,29 +44,31 @@ sys.stdout.write("{}\\n")
         encoding="utf-8",
     )
     if os.name == "nt":
-        launcher = bin_dir / "py.cmd"
-        launcher.write_text(
-            f'@echo off\r\n"{sys.executable}" "{fake}" %*\r\n',
-            encoding="utf-8",
-        )
-        return
+        return fake
     launcher = bin_dir / "python3"
     launcher.write_text(
         f'#!/bin/sh\nexec "{sys.executable}" "{fake}" "$@"\n',
         encoding="utf-8",
     )
     launcher.chmod(0o755)
+    return fake
 
 
 def _run_plugin(tmp_path: Path, script: str, env: dict[str, str], timeout: float) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    _install_fake_python(bin_dir)
+    fake = _install_fake_python(bin_dir)
     node = _require_node()
     child_env = os.environ.copy()
     child_env.update(env)
-    child_env["PATH"] = str(bin_dir) + os.pathsep + child_env.get("PATH", "")
     child_env["AMB_CWD"] = str(tmp_path / "repo")
+    if os.name == "nt":
+        # spawn("py") selects py.exe before a PATH py.cmd, so the Windows test
+        # cannot intercept the production launcher. This override is test-only.
+        child_env["AMB_LIFECYCLE_HOOK_COMMAND"] = json.dumps([sys.executable, str(fake)])
+    else:
+        child_env.pop("AMB_LIFECYCLE_HOOK_COMMAND", None)
+        child_env["PATH"] = str(bin_dir) + os.pathsep + child_env.get("PATH", "")
     return subprocess.run(
         [node, "--input-type=module", "-e", script],
         cwd=ROOT,
@@ -138,6 +140,29 @@ console.log(JSON.stringify({ elapsed_ms: Date.now() - started }));
 
 
 def _process_alive(pid: int) -> bool:
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except OSError:
