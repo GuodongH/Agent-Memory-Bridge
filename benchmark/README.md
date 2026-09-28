@@ -365,9 +365,10 @@ live trace is scored. `collect-codex` runs the host in an allowlisted
 mount namespace and refuses to start if a preflight can still see a
 memory-only marker, the fixture store, or this checkout. A shell or filesystem
 tool trace that reads the answer key is `INCONCLUSIVE` (`fixture_leak`).
-`instrument_pass`
-means the measurement setup is complete for the traces that were actually
-scored. It does not mean the host activated AMB correctly.
+The benchmark OpenCode config denies `task`, because `opencode run --format json`
+does not emit child-session tool events. `instrument_pass` means the measurement
+setup is complete for the traces that were actually scored. It does not mean
+the host activated AMB correctly.
 
 ## Activation Stress
 

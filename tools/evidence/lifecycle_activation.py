@@ -191,6 +191,7 @@ def check_pack(root: Path | None = None) -> dict[str, Any]:
                 or "http://127.0.0.1:" not in config_text
                 or "/mcp" not in config_text
                 or '"oauth": false' not in config_text
+                or '"task": "deny"' not in config_text
                 or OPENCODE_STORE_MOUNT not in wrapper_text
                 or store in wrapper_text
                 or "fixture-store.sqlite" in wrapper_text
@@ -607,13 +608,21 @@ def render_opencode_public_command(*, case_id: str, pack: str = "v2", condition:
 
 
 def render_opencode_remote_config(*, url: str, headers: dict[str, str] | None = None) -> str:
-    """OpenCode 1.18 remote MCP stanza. The model reaches AMB through loopback, not the SQLite file."""
+    """OpenCode 1.18 loopback MCP config. `task` stays denied so child sessions cannot hide store reads."""
     if not url.startswith("http://127.0.0.1:") or not url.endswith("/mcp"):
         raise RuntimeError("OpenCode MCP URL must be a loopback /mcp endpoint")
     server: dict[str, Any] = {"type": "remote", "url": url, "enabled": True, "oauth": False}
     if headers:
         server["headers"] = dict(headers)
-    rendered = json.dumps({"mcp": {"agentMemoryBridge": server}}, indent=2) + "\n"
+    rendered = (
+        json.dumps(
+            {"permission": {"task": "deny"}, "mcp": {"agentMemoryBridge": server}},
+            indent=2,
+        )
+        + "\n"
+    )
+    if '"task": "deny"' not in rendered:
+        raise RuntimeError("OpenCode config must deny the task tool")
     _reject_store_exposure(rendered, "OpenCode MCP config exposes the fixture store or production AMB")
     return rendered
 

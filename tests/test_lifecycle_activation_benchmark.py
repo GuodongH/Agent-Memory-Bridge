@@ -636,6 +636,7 @@ def test_v2_fixture_resolves_namespace_from_the_git_binding(tmp_path: Path) -> N
     assert bridge not in wrapper
     assert "fixture-store.sqlite" not in wrapper
     config = json.loads(prepared["client_config_path"].read_text(encoding="utf-8"))
+    assert config["permission"] == {"task": "deny"}
     server = config["mcp"]["agentMemoryBridge"]
     assert server == {
         "type": "remote",
@@ -679,6 +680,7 @@ def test_v2_fixture_resolves_namespace_from_the_git_binding(tmp_path: Path) -> N
         headers={"X-Fixture": "loopback"},
     )
     assert "X-Fixture" in with_headers
+    assert '"task": "deny"' in with_headers
     assert "fixture-store.sqlite" not in with_headers
     resolved = resolve_project_context(
         prepared["fixture_repo"],
