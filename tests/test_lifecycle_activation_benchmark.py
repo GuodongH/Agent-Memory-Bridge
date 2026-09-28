@@ -8,7 +8,9 @@ from pathlib import Path
 
 from tools.evidence._temporary_store import ScopedTemporaryMemoryStore
 from tools.evidence.lifecycle_activation import (
+    OPENCODE_STORE_MOUNT,
     PACK_PATH,
+    assemble_opencode_observation,
     assess_fixture_access,
     build_allowlisted_filesystem_argv,
     build_codex_collect_argv,
@@ -22,11 +24,13 @@ from tools.evidence.lifecycle_activation import (
     model_provider_override,
     mount_would_expose,
     parse_codex_exec_jsonl,
+    parse_opencode_run_json,
     prepare_collector_layout,
     prepare_governed_fixture,
     render_collector_codex_preamble,
     render_isolated_codex_config,
     render_local_proxy_mcp_stanza,
+    render_opencode_remote_config,
     sandbox_for_case,
     score_observation,
     score_pack,
@@ -34,6 +38,7 @@ from tools.evidence.lifecycle_activation import (
     seed_case_memories,
     validate_pack,
     verify_freeze,
+    write_scored_observation,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -614,33 +619,67 @@ def test_v2_fixture_resolves_namespace_from_the_git_binding(tmp_path: Path) -> N
         assert case["expected_namespace"] not in content
     prepared = prepare_governed_fixture(case, tmp_path / "prepared", host="opencode")
     command = prepared["command"]
-    assert "<" not in command and ">" not in command
-    assert "opencode run" in command
+    bridge = str(prepared["bridge_home"])
+    assert "collect-opencode" in command
+    assert "opencode run" not in command
     assert "--pure" not in command.split()
-    assert "grok-4.7-build-fast" in command
-    assert "XDG_CONFIG_HOME=" in command
-    assert "XDG_DATA_HOME=" in command
-    assert "XDG_STATE_HOME=" in command
-    assert "XDG_CACHE_HOME=" in command
-    assert "PYTHONPATH=" in command
+    assert bridge not in command
+    assert "fixture-store.sqlite" not in command
+    assert "AGENT_MEMORY_BRIDGE_HOME" not in command
+    assert "192.168." not in command and ":58080" not in command
     assert str(Path.home() / ".config" / "opencode") not in command
-    plugin_text = prepared["plugin_path"].read_text(encoding="utf-8")
-    assert "session.created" in plugin_text
-    assert "experimental.session.compacting" in plugin_text
-    assert "lifecycle-hook" in plugin_text
-    assert '"-m", "agent_mem_bridge", "lifecycle-hook"' in plugin_text
+    plugin_path = ROOT / "adapters" / "opencode" / "amb-lifecycle.js"
+    assert prepared["plugin_path"].read_bytes() == plugin_path.read_bytes()
+    assert not prepared["wrapper_path"].is_relative_to(prepared["fixture_repo"])
+    wrapper = prepared["wrapper_path"].read_text(encoding="utf-8")
+    assert OPENCODE_STORE_MOUNT in wrapper
+    assert bridge not in wrapper
+    assert "fixture-store.sqlite" not in wrapper
     config = json.loads(prepared["client_config_path"].read_text(encoding="utf-8"))
     server = config["mcp"]["agentMemoryBridge"]
-    assert server["type"] == "local"
-    assert server["command"][1:] == ["-m", "agent_mem_bridge"]
-    assert server["environment"]["AGENT_MEMORY_BRIDGE_HOME"] == str(prepared["bridge_home"])
-    rendered_config = json.dumps(config)
+    assert server == {
+        "type": "remote",
+        "url": "http://127.0.0.1:9/mcp",
+        "enabled": True,
+        "oauth": False,
+    }
+    rendered_config = prepared["client_config_path"].read_text(encoding="utf-8")
+    assert bridge not in rendered_config
+    assert "fixture-store.sqlite" not in rendered_config
+    assert "AGENT_MEMORY_BRIDGE_HOME" not in rendered_config
     assert "192.168." not in rendered_config
     assert "58080" not in rendered_config
-    assert "AGENT_MEMORY_BRIDGE_REMOTE_URL" not in rendered_config
+    env_text = json.dumps(prepared["process_env"])
+    assert "XDG_CONFIG_HOME" in prepared["process_env"]
+    assert bridge not in env_text
+    assert "AGENT_MEMORY_BRIDGE_HOME" not in env_text
+    assert "fixture-store.sqlite" not in env_text
+    plain_argv = prepared["plain_sandbox_argv"]
+    adapter_argv = prepared["adapter_sandbox_argv"]
+    plain_tail = "\n".join(plain_argv[plain_argv.index("--") + 1 :])
+    adapter_tail = "\n".join(adapter_argv[adapter_argv.index("--") + 1 :])
+    for tail in (plain_tail, adapter_tail):
+        assert bridge not in tail
+        assert "AGENT_MEMORY_BRIDGE_HOME" not in tail
+        assert "fixture-store.sqlite" not in tail
+        assert "--pure" not in tail.split()
+        assert "opencode" in tail.split()
+        assert "run" in tail.split()
+    assert bridge not in "\n".join(plain_argv)
+    assert OPENCODE_STORE_MOUNT not in "\n".join(plain_argv)
+    assert bridge in "\n".join(adapter_argv)
+    assert OPENCODE_STORE_MOUNT in "\n".join(adapter_argv)
+    assert not prepared["bridge_home"].is_relative_to(prepared["fixture_repo"].parent)
+    assert not prepared["client_home"].is_relative_to(prepared["fixture_repo"].parent)
     assert prepared["config_home"].is_dir()
     assert not prepared["config_home"].is_relative_to(Path.home() / ".config")
     assert prepared["fixture_repo"].joinpath(".git").exists()
+    with_headers = render_opencode_remote_config(
+        url="http://127.0.0.1:9/mcp",
+        headers={"X-Fixture": "loopback"},
+    )
+    assert "X-Fixture" in with_headers
+    assert "fixture-store.sqlite" not in with_headers
     resolved = resolve_project_context(
         prepared["fixture_repo"],
         snapshot_root=prepared["bridge_home"] / "repository",
@@ -648,3 +687,199 @@ def test_v2_fixture_resolves_namespace_from_the_git_binding(tmp_path: Path) -> N
     assert resolved["status"] == "bound"
     assert resolved["namespace"] == case["expected_namespace"]
     assert case["expected_namespace"] not in prepared["prompt_path"].read_text(encoding="utf-8")
+
+
+def test_opencode_json_normalizes_a_stopped_turn() -> None:
+    case = _case("known-project-gotcha")
+    marker = str(case["useful_marker"])
+    events = [
+        {
+            "type": "tool_use",
+            "part": {
+                "type": "tool",
+                "tool": "agentMemoryBridge_recall",
+                "state": {
+                    "status": "completed",
+                    "input": {"namespace": case["expected_namespace"]},
+                    "output": f"gotcha token: {marker}",
+                },
+            },
+        },
+        {
+            "type": "tool_use",
+            "part": {
+                "type": "tool",
+                "tool": "read",
+                "state": {
+                    "status": "completed",
+                    "input": {"filePath": "scripts/refresh_report.py"},
+                    "output": "script",
+                },
+            },
+        },
+        {
+            "type": "tool_use",
+            "part": {
+                "type": "tool",
+                "tool": "bash",
+                "state": {
+                    "status": "completed",
+                    "input": {"command": "sed -n 1,5p scripts/refresh_report.py"},
+                    "output": "plain",
+                },
+            },
+        },
+        {"type": "text", "part": {"type": "text", "text": marker}},
+        {
+            "type": "step_finish",
+            "part": {"type": "step-finish", "reason": "stop", "tokens": {"input": 3, "output": 4}},
+        },
+    ]
+    parsed = parse_opencode_run_json(
+        "\n".join(json.dumps(event) for event in events),
+        interesting_paths=list(case["fixture"]["files"]),
+    )
+    assert parsed["terminal_event"] == "turn.completed"
+    assert parsed["tool_calls"] == [
+        {
+            "tool": "recall",
+            "namespace": case["expected_namespace"],
+            "is_error": False,
+            "result_text": f"gotcha token: {marker}",
+            "result_count": None,
+            "elapsed_ms": None,
+        }
+    ]
+    assert parsed["repo_paths_read"] == ["scripts/refresh_report.py"]
+    assert parsed["input_tokens"] == 3
+    assert parsed["output_tokens"] == 4
+    access = assess_fixture_access(
+        parsed["commands"],
+        markers=memory_only_markers(case),
+        hidden_paths=["/hidden/store", OPENCODE_STORE_MOUNT],
+    )
+    assert access["direct_read"] is False
+    leaked = assess_fixture_access(
+        [{"command": f"cat {OPENCODE_STORE_MOUNT}/fixture-store.sqlite", "output": ""}],
+        markers=memory_only_markers(case),
+        hidden_paths=["/hidden/store", OPENCODE_STORE_MOUNT],
+    )
+    assert leaked["direct_read"] is True
+    assert "collector_path" in leaked["signals"]
+
+
+def test_opencode_trace_without_stop_stays_incomplete() -> None:
+    missing = parse_opencode_run_json(json.dumps({"type": "text", "part": {"text": "partial"}}))
+    assert missing["terminal_event"] != "turn.completed"
+    assert missing["final_text"] == "partial"
+    no_text = parse_opencode_run_json(json.dumps({"type": "step_finish", "part": {"reason": "stop"}}))
+    assert no_text["terminal_event"] != "turn.completed"
+    errored = parse_opencode_run_json(
+        "\n".join(
+            json.dumps(event)
+            for event in (
+                {"type": "text", "part": {"text": "hello"}},
+                {"type": "error", "error": {"name": "boom"}},
+                {"type": "step_finish", "part": {"reason": "stop"}},
+            )
+        )
+    )
+    assert errored["terminal_event"] != "turn.completed"
+    unfinished = parse_opencode_run_json(
+        "\n".join(
+            json.dumps(event)
+            for event in (
+                {"type": "text", "part": {"text": "hello"}},
+                {"type": "step_finish", "part": {"reason": "tool-calls"}},
+            )
+        )
+    )
+    assert unfinished["terminal_event"] != "turn.completed"
+
+
+def test_invalid_schema_and_unknown_case_do_not_score_the_lane() -> None:
+    case = _case("known-project-gotcha")
+    freeze = verify_freeze()
+    broken = _complete_live(case)
+    broken["schema"] = "not-an-observation"
+    report = score_pack(load_pack(), [broken], freeze=freeze)
+    assert next(item for item in report["results"] if item["id"] == case["id"])["status"] == "INCONCLUSIVE"
+    assert report["host_lanes"]["codex"]["status"] == "INCONCLUSIVE"
+    assert report["host_lanes"]["codex"]["case_ids"] == []
+    assert report["instrument"]["checks"]["codex_live_trace"] is False
+    unknown = _complete_live(case)
+    unknown["case_id"] = "not-a-frozen-case"
+    unknown_report = score_pack(load_pack(), [unknown], freeze=freeze)
+    assert unknown_report["host_lanes"]["codex"]["status"] == "INCONCLUSIVE"
+    assert unknown_report["host_lanes"]["codex"]["case_ids"] == []
+    assert all(item["id"] != "not-a-frozen-case" for item in unknown_report["results"])
+    assert unknown_report["instrument"]["checks"]["codex_live_trace"] is False
+    bad = _complete_live(_case("isolated-typo"))
+    bad["schema"] = "broken"
+    mixed = score_pack(load_pack(), [bad, _complete_live(case)], freeze=freeze)
+    assert mixed["host_lanes"]["codex"]["status"] == "SCORED"
+    assert mixed["host_lanes"]["codex"]["case_ids"] == [case["id"]]
+
+
+def test_opencode_observation_writer_scores_only_a_gradeable_trace(tmp_path: Path) -> None:
+    pack = load_pack(version="v2")
+    case = next(item for item in pack["cases"] if item["id"] == "known-project-gotcha")
+    freeze = verify_freeze(version="v2")
+    parsed = parse_opencode_run_json(
+        "\n".join(
+            json.dumps(event)
+            for event in (
+                {"type": "text", "part": {"text": "no recall"}},
+                {"type": "step_finish", "part": {"reason": "stop"}},
+            )
+        )
+    )
+    observation = assemble_opencode_observation(
+        case=case,
+        pack_version="v2",
+        condition="plain_mcp_baseline",
+        model="recorded-model",
+        version="opencode 1.18.30",
+        parsed=parsed,
+        store_home=tmp_path / "store",
+        returncode=0,
+        elapsed_ms=5,
+        freeze=freeze,
+    )
+    report = write_scored_observation(tmp_path / "out", pack, observation, freeze)
+    assert (tmp_path / "out" / "observation.json").is_file()
+    assert (tmp_path / "out" / "report.json").is_file()
+    assert next(item for item in report["results"] if item["id"] == case["id"])["status"] == "FAIL"
+    assert report["host_lanes"]["opencode"]["status"] == "SCORED"
+    assert report["host_lanes"]["opencode"]["case_ids"] == [case["id"]]
+    assert report["host_lanes"]["codex"]["status"] == "NOT_RUN"
+    leaked_parsed = dict(parsed)
+    leaked_parsed["commands"] = [{"command": f"sqlite3 {tmp_path / 'store'} / fixture-store.sqlite", "output": ""}]
+    leaked = assemble_opencode_observation(
+        case=case,
+        pack_version="v2",
+        condition="plain_mcp_baseline",
+        model="recorded-model",
+        version="opencode 1.18.30",
+        parsed=leaked_parsed,
+        store_home=tmp_path / "store",
+        returncode=0,
+        elapsed_ms=5,
+        freeze=freeze,
+    )
+    leaked_report = score_pack(pack, [leaked], freeze=freeze)
+    assert leaked["fixture_access"]["direct_read"] is True
+    assert leaked_report["host_lanes"]["opencode"]["status"] == "INCONCLUSIVE"
+    assert leaked_report["host_lanes"]["opencode"]["case_ids"] == []
+    assert leaked_report["host_lanes"]["opencode"]["contaminated_case_ids"] == [case["id"]]
+
+
+def test_collect_opencode_command_is_registered() -> None:
+    import importlib
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    module = importlib.import_module("run_lifecycle_activation_benchmark")
+    args = module._parser().parse_args(["collect-opencode", "--out", "unused"])
+    assert args.command == "collect-opencode"
+    assert args.pack == "v2"
+    assert args.condition == "plain_mcp_baseline"

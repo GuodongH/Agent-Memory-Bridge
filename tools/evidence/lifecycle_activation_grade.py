@@ -154,7 +154,7 @@ def score_pack(
             results.append(_not_run(case))
         else:
             results.append(score_observation(case, observation, expected_freeze=freeze))
-    lanes = host_lanes(observations, freeze)
+    lanes = host_lanes(observations, freeze, results)
     metrics = build_metrics(results)
     return {
         "schema": REPORT_SCHEMA,
@@ -257,7 +257,14 @@ def build_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
 def host_lanes(
     observations: list[dict[str, Any]],
     expected_freeze: dict[str, Any] | None = None,
+    results: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """Mark a live lane SCORED only from frozen cases that actually graded PASS or FAIL.
+
+    Callers that already scored the pack pass those results. A malformed schema,
+    an unknown case, a leak, or an inconclusive grade cannot turn the lane on.
+    One gradeable frozen case still can, without adopting the blocked case ids.
+    """
     lanes = {
         "codex": {
             "status": "NOT_RUN",
@@ -271,27 +278,36 @@ def host_lanes(
             "execution_kind": None,
             "case_ids": [],
             "contaminated_case_ids": [],
-            "runnable_path": "python ./scripts/run_lifecycle_activation_benchmark.py prepare-host --host opencode --case-id known-project-gotcha",
+            "runnable_path": "python ./scripts/run_lifecycle_activation_benchmark.py collect-opencode --case-id known-project-gotcha",
         },
+    }
+    gradeable = {
+        result.get("id")
+        for result in (results or [])
+        if isinstance(result, dict)
+        and result.get("status") in {"PASS", "FAIL"}
+        and result.get("id") in REQUIRED_CASE_IDS
     }
     for observation in observations:
         host = str((observation.get("host") or {}).get("id") or "")
-        if host not in lanes:
+        if host not in lanes or observation.get("execution_kind") != "live":
             continue
-        if observation.get("execution_kind") != "live":
-            continue
+        case_id = observation.get("case_id")
         access = observation.get("fixture_access") if isinstance(observation.get("fixture_access"), dict) else {}
         leaked = access.get("direct_read") is True
         if leaked:
-            lanes[host]["contaminated_case_ids"].append(observation.get("case_id"))
-        if leaked or _live_gate_reasons(observation, expected_freeze):
+            lanes[host]["contaminated_case_ids"].append(case_id)
+        member = isinstance(case_id, str) and case_id in REQUIRED_CASE_IDS
+        schema_ok = observation.get("schema") == OBSERVATION_SCHEMA and member
+        scored_result = results is None or case_id in gradeable
+        if leaked or not schema_ok or not scored_result or _live_gate_reasons(observation, expected_freeze):
             if lanes[host]["status"] != "SCORED":
                 lanes[host]["status"] = "INCONCLUSIVE"
                 lanes[host]["execution_kind"] = "live"
             continue
         lanes[host]["status"] = "SCORED"
         lanes[host]["execution_kind"] = "live"
-        lanes[host]["case_ids"].append(observation.get("case_id"))
+        lanes[host]["case_ids"].append(case_id)
     return lanes
 
 
