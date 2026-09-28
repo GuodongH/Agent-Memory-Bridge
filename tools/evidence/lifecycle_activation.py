@@ -14,6 +14,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -158,11 +159,22 @@ def check_pack(root: Path | None = None) -> dict[str, Any]:
                 host="opencode",
             )
             command = prepared["command"]
+            plugin_text = prepared["plugin_path"].read_text(encoding="utf-8")
+            config_text = prepared["client_config_path"].read_text(encoding="utf-8")
             if (
                 "<" in command
                 or ">" in command
                 or "opencode run" not in command
+                or "--pure" in command.split()
                 or "192.168." in command
+                or ":58080" in command
+                or "session.created" not in plugin_text
+                or "experimental.session.compacting" not in plugin_text
+                or "lifecycle-hook" not in plugin_text
+                or "AGENT_MEMORY_BRIDGE_HOME" not in config_text
+                or "192.168." in config_text
+                or "58080" in config_text
+                or "AGENT_MEMORY_BRIDGE_REMOTE_URL" in config_text
                 or not prepared["fixture_repo"].joinpath(".git").exists()
                 or prepared["bound_repository_id"] != prepared["repository_id"]
             ):
@@ -539,18 +551,32 @@ def render_opencode_command(
     prompt_path: Path,
     source_root: Path,
     model: str,
+    config_home: Path,
+    data_home: Path,
+    state_home: Path,
+    cache_home: Path,
+    opencode_home: Path,
 ) -> str:
-    """Concrete OpenCode command. Placeholders are rejected by check."""
+    """Concrete OpenCode command. Placeholders are rejected by check.
+
+    ``--pure`` disables external plugins, including the lifecycle plugin, so it
+    is not part of this command. The XDG homes keep the user's OpenCode config
+    out of the run.
+    """
     command = " ".join(
         [
             "env",
             f"AGENT_MEMORY_BRIDGE_HOME={shlex.quote(str(bridge_home))}",
             f"PYTHONPATH={shlex.quote(str(source_root))}",
+            f"XDG_CONFIG_HOME={shlex.quote(str(config_home))}",
+            f"XDG_DATA_HOME={shlex.quote(str(data_home))}",
+            f"XDG_STATE_HOME={shlex.quote(str(state_home))}",
+            f"XDG_CACHE_HOME={shlex.quote(str(cache_home))}",
+            f"OPENCODE_TEST_HOME={shlex.quote(str(opencode_home))}",
             "opencode",
             "run",
             "--format",
             "json",
-            "--pure",
             "--dir",
             shlex.quote(str(fixture_repo)),
             "--model",
@@ -559,9 +585,50 @@ def render_opencode_command(
             f"$(cat {shlex.quote(str(prompt_path))})",
         ]
     )
-    if "<" in command or ">" in command or "192.168." in command or ":58080" in command:
-        raise RuntimeError("opencode command contains a placeholder or production route")
+    if "<" in command or ">" in command or "--pure" in command.split() or "192.168." in command or ":58080" in command:
+        raise RuntimeError("opencode command contains a placeholder, --pure, or a production route")
     return command
+
+
+def install_isolated_opencode(checkout: Path, bridge_home: Path, destination: Path) -> dict[str, Path]:
+    """Install the repo lifecycle plugin and a local MCP config outside the user profile."""
+    plugin_source = ROOT / "adapters" / "opencode" / "amb-lifecycle.js"
+    plugin_path = checkout / ".opencode" / "plugins" / plugin_source.name
+    plugin_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(plugin_source, plugin_path)
+    homes = {
+        "config_home": destination / "xdg-config",
+        "data_home": destination / "xdg-data",
+        "state_home": destination / "xdg-state",
+        "cache_home": destination / "xdg-cache",
+        "opencode_home": destination / "opencode-home",
+    }
+    for path in homes.values():
+        path.mkdir(parents=True, exist_ok=True)
+    from agent_mem_bridge.client_config import build_client_config_options, render_client_config
+
+    rendered = render_client_config(
+        build_client_config_options(
+            "opencode",
+            python_path=sys.executable,
+            cwd=checkout,
+            bridge_home=bridge_home,
+            config_path=bridge_home / "config.toml",
+        )
+    ).content
+    forbidden = ("192.168.", "58080", "AGENT_MEMORY_BRIDGE_REMOTE_URL", "http-token", "Bearer ")
+    if any(marker in rendered for marker in forbidden):
+        raise RuntimeError("isolated OpenCode config includes a production route")
+    plugin_text = plugin_path.read_text(encoding="utf-8")
+    if (
+        "session.created" not in plugin_text
+        or "experimental.session.compacting" not in plugin_text
+        or "lifecycle-hook" not in plugin_text
+    ):
+        raise RuntimeError("OpenCode lifecycle plugin is missing a supported entrypoint")
+    config_path = checkout / "opencode.json"
+    config_path.write_text(rendered if rendered.endswith("\n") else rendered + "\n", encoding="utf-8")
+    return {**homes, "plugin_path": plugin_path, "client_config_path": config_path}
 
 
 def git_commit_fixture(checkout: Path) -> None:
@@ -642,6 +709,7 @@ def prepare_governed_fixture(
     checkout = destination / "checkout"
     bridge_home = destination / "bridge"
     materialize_fixture(case, checkout)
+    installed = install_isolated_opencode(checkout, bridge_home, destination)
     git_commit_fixture(checkout)
     repository_id = bind_fixture_namespace(case, checkout, bridge_home)
     prompt_path = destination / "prompt.txt"
@@ -652,6 +720,11 @@ def prepare_governed_fixture(
         prompt_path=prompt_path,
         source_root=(source_root or (ROOT / "src")).resolve(),
         model=model,
+        config_home=installed["config_home"],
+        data_home=installed["data_home"],
+        state_home=installed["state_home"],
+        cache_home=installed["cache_home"],
+        opencode_home=installed["opencode_home"],
     )
     (destination / "command.txt").write_text(command + "\n", encoding="utf-8")
     return {
@@ -661,6 +734,9 @@ def prepare_governed_fixture(
         "repository_id": repository_id,
         "bound_repository_id": repository_id,
         "prompt_path": prompt_path,
+        "plugin_path": installed["plugin_path"],
+        "client_config_path": installed["client_config_path"],
+        "config_home": installed["config_home"],
     }
 
 

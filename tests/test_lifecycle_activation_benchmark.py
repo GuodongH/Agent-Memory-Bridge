@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -342,12 +343,14 @@ def test_proxy_stanza_and_filesystem_hide_the_answer_key(tmp_path: Path) -> None
     assert argv[argv.index("--") + 1 :] == ["codex", "exec", "hello"]
     assert "--tmpfs" in argv
     assert argv[argv.index("--tmpfs") + 1] == "/tmp"
-    assert "--ro-bind" in argv
     assert str(secret) not in argv
     assert str(tmp_path / "repo") not in argv
     assert "--add-dir" not in argv
     pairs = list(zip(argv, argv[1:], argv[2:]))
     assert ("--ro-bind", "/", "/") not in pairs
+    assert ("--bind", "/", "/") not in pairs
+    if os.name == "posix":
+        assert "--ro-bind" in argv
     try:
         build_allowlisted_filesystem_argv(
             bwrap=tmp_path / "bwrap",
@@ -457,9 +460,16 @@ def test_live_scorer_mismatch_is_inconclusive() -> None:
     case = _case("known-project-gotcha")
     observation = _complete_live(case)
     observation["scorer_sha256"] = "0" * 64
-    result = score_observation(case, observation, expected_freeze=verify_freeze())
+    freeze = verify_freeze()
+    result = score_observation(case, observation, expected_freeze=freeze)
     assert result["status"] == "INCONCLUSIVE"
     assert "scorer_mismatch" in result["reasons"]
+    report = score_pack(load_pack(), [observation], freeze=freeze)
+    assert report["scorer_sha256"] == scorer_sha256()
+    assert report["host_lanes"]["codex"]["status"] == "INCONCLUSIVE"
+    assert report["host_lanes"]["codex"]["case_ids"] == []
+    assert report["instrument"]["checks"]["codex_live_trace"] is False
+    assert report["instrument"]["pass"] is False
 
 
 def test_archived_plain_mcp_baseline_stays_a_fail_when_reparsed() -> None:
@@ -507,10 +517,36 @@ def test_adapter_without_hook_evidence_is_not_a_product_fail() -> None:
     observation["condition"] = "adapter_enabled"
     observation["adapter"] = {"loaded": False}
     observation["final_text"] = str(case["useful_marker"])
-    result = score_observation(case, observation, expected_freeze=verify_freeze())
+    freeze = verify_freeze()
+    result = score_observation(case, observation, expected_freeze=freeze)
     assert result["status"] == "INCONCLUSIVE"
     assert "adapter_not_observed" in result["reasons"]
     assert "required_recall_miss" not in result["reasons"]
+    report = score_pack(load_pack(), [observation], freeze=freeze)
+    assert report["host_lanes"]["codex"]["status"] == "INCONCLUSIVE"
+    assert report["instrument"]["checks"]["codex_live_trace"] is False
+    assert report["instrument"]["pass"] is False
+
+
+def test_freeze_mismatch_does_not_mark_the_host_lane_scored() -> None:
+    case = _case("known-project-gotcha")
+    observation = _complete_live(case)
+    observation["freeze_sha256"] = {key: "0" * 64 for key in observation["freeze_sha256"]}
+    freeze = verify_freeze()
+    result = score_observation(case, observation, expected_freeze=freeze)
+    assert result["status"] == "INCONCLUSIVE"
+    assert "freeze_mismatch" in result["reasons"]
+    report = score_pack(load_pack(), [observation], freeze=freeze)
+    assert report["host_lanes"]["codex"]["status"] == "INCONCLUSIVE"
+    assert report["host_lanes"]["codex"]["case_ids"] == []
+    assert report["instrument"]["checks"]["codex_live_trace"] is False
+    assert report["instrument"]["pass"] is False
+    gradeable = _complete_live(case)
+    graded = score_pack(load_pack(), [gradeable], freeze=freeze)
+    assert next(item for item in graded["results"] if item["id"] == case["id"])["status"] == "FAIL"
+    assert graded["host_lanes"]["codex"]["status"] == "SCORED"
+    assert graded["host_lanes"]["codex"]["case_ids"] == [case["id"]]
+    assert graded["instrument"]["checks"]["codex_live_trace"] is True
 
 
 def test_adapter_evidence_recall_can_pass_without_a_model_mcp_call() -> None:
@@ -580,7 +616,30 @@ def test_v2_fixture_resolves_namespace_from_the_git_binding(tmp_path: Path) -> N
     command = prepared["command"]
     assert "<" not in command and ">" not in command
     assert "opencode run" in command
+    assert "--pure" not in command.split()
     assert "grok-4.7-build-fast" in command
+    assert "XDG_CONFIG_HOME=" in command
+    assert "XDG_DATA_HOME=" in command
+    assert "XDG_STATE_HOME=" in command
+    assert "XDG_CACHE_HOME=" in command
+    assert "PYTHONPATH=" in command
+    assert str(Path.home() / ".config" / "opencode") not in command
+    plugin_text = prepared["plugin_path"].read_text(encoding="utf-8")
+    assert "session.created" in plugin_text
+    assert "experimental.session.compacting" in plugin_text
+    assert "lifecycle-hook" in plugin_text
+    assert '"-m", "agent_mem_bridge", "lifecycle-hook"' in plugin_text
+    config = json.loads(prepared["client_config_path"].read_text(encoding="utf-8"))
+    server = config["mcp"]["agentMemoryBridge"]
+    assert server["type"] == "local"
+    assert server["command"][1:] == ["-m", "agent_mem_bridge"]
+    assert server["environment"]["AGENT_MEMORY_BRIDGE_HOME"] == str(prepared["bridge_home"])
+    rendered_config = json.dumps(config)
+    assert "192.168." not in rendered_config
+    assert "58080" not in rendered_config
+    assert "AGENT_MEMORY_BRIDGE_REMOTE_URL" not in rendered_config
+    assert prepared["config_home"].is_dir()
+    assert not prepared["config_home"].is_relative_to(Path.home() / ".config")
     assert prepared["fixture_repo"].joinpath(".git").exists()
     resolved = resolve_project_context(
         prepared["fixture_repo"],
