@@ -343,7 +343,7 @@ def assess_fixture_access(
     markers: list[str],
     hidden_paths: list[str],
 ) -> dict[str, Any]:
-    """Flag shell access to the hidden store. MCP tool results are not commands."""
+    """Flag model filesystem access to the hidden store. MCP tool results are not commands."""
     signals: list[str] = []
     needles = [item for item in hidden_paths if item]
     needles.extend(["fixture-store.sqlite", "recall-receipt-secret.json"])
@@ -979,11 +979,38 @@ def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None
     }
 
 
+def _opencode_strings(tool_input: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
+    values: list[str] = []
+    for key in keys:
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            values.append(value)
+        elif isinstance(value, list):
+            values.extend(item for item in value if isinstance(item, str))
+    return values
+
+
+# OpenCode 1.18 model tools. `read` also lists directories. Search tools return
+# paths and matching lines; edit/write outputs can echo a legitimate recall.
+_OPENCODE_FS_FIELDS: dict[str, tuple[str, ...]] = {
+    "read": ("filePath", "filePaths", "path", "paths", "file", "files"),
+    "grep": ("path", "paths", "pattern", "include"),
+    "glob": ("path", "paths", "pattern"),
+    "list": ("path", "paths", "directory", "filePath"),
+    "edit": ("filePath", "filePaths", "path", "file"),
+    "write": ("filePath", "filePaths", "path", "file"),
+    "apply_patch": ("filePath", "path", "patchText", "patch"),
+    "multiedit": ("filePath", "filePaths", "path", "patchText", "patch"),
+}
+_OPENCODE_FS_OUTPUTS = frozenset({"read", "grep", "glob", "list"})
+
+
 def parse_opencode_run_json(text: str, interesting_paths: list[str] | None = None) -> dict[str, Any]:
     """Normalize `opencode run --format json` JSONL without launching OpenCode.
 
     `turn.completed` is reserved for a non-error trace that stopped with text.
-    A missing step_finish stays incomplete.
+    A missing step_finish stays incomplete. Filesystem tool paths stay visible
+    to the fixture-access gate; repo matching still uses read paths only.
     """
     tool_calls: list[dict[str, Any]] = []
     final_parts: list[str] = []
@@ -1042,10 +1069,17 @@ def parse_opencode_run_json(text: str, interesting_paths: list[str] | None = Non
         if raw_tool in {"bash", "shell"}:
             commands.append({"command": str(tool_input.get("command") or ""), "output": output_text})
             continue
-        if raw_tool == "read":
-            file_path = tool_input.get("filePath") or tool_input.get("path") or tool_input.get("file") or ""
-            if isinstance(file_path, str):
-                repo_paths.extend(_match_interesting(file_path, interesting))
+        if raw_tool in _OPENCODE_FS_FIELDS:
+            accessed = _opencode_strings(tool_input, _OPENCODE_FS_FIELDS[raw_tool])
+            if raw_tool == "read":
+                for file_path in accessed:
+                    repo_paths.extend(_match_interesting(file_path, interesting))
+            commands.append(
+                {
+                    "command": "\n".join(accessed),
+                    "output": output_text if raw_tool in _OPENCODE_FS_OUTPUTS else "",
+                }
+            )
             continue
         tool_name = _normalize_opencode_tool_name(raw_tool)
         if tool_name not in AMB_TOOL_NAMES:
