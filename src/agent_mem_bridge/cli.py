@@ -44,6 +44,7 @@ from .project_init import (
     render_project_init_preview,
     render_project_init_success,
 )
+from .project_resolution import resolution_exit_code, resolve_project_context
 from .repository_bootstrap import compile_repository_snapshot, render_snapshot_markdown
 from .repository_snapshot_store import RepositorySnapshotStore
 from .review_queue import build_review_queue_report, render_review_queue_markdown
@@ -296,6 +297,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Show the detected repository and namespace without writing.",
+    )
+    project_resolve_parser = project_subparsers.add_parser(
+        "resolve",
+        help="Resolve the current checkout to its governed project namespace without writing.",
+    )
+    project_resolve_parser.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        default=Path("."),
+        help="Repository directory. Defaults to the current directory. Read-only.",
     )
 
     bootstrap_parser = subparsers.add_parser(
@@ -837,10 +849,23 @@ def _run_index_rebuild(namespace: argparse.Namespace) -> int:
 
 
 def _run_project(namespace: argparse.Namespace) -> int:
-    if getattr(namespace, "project_command", None) != "init":
-        print("usage: agent-memory-bridge project init [path] [--namespace NAME] [--yes] [--dry-run]", file=sys.stderr)
-        return 2
-    return _run_project_init(namespace)
+    command = getattr(namespace, "project_command", None)
+    if command == "init":
+        return _run_project_init(namespace)
+    if command == "resolve":
+        return _run_project_resolve(namespace)
+    print(
+        "usage: agent-memory-bridge project init [path] [--namespace NAME] [--yes] [--dry-run]\n"
+        "       agent-memory-bridge project resolve [path]",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def _run_project_resolve(namespace: argparse.Namespace) -> int:
+    result = resolve_project_context(namespace.path, snapshot_root=resolve_repository_snapshot_root())
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return resolution_exit_code(result)
 
 
 def _run_project_init(namespace: argparse.Namespace) -> int:

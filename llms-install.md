@@ -110,7 +110,8 @@ an optional source route, not the baseline install path.
 The human-facing first-value path is connect, run `project init` to confirm a
 namespace and bootstrap repository WHAT, teach one explicit WHY in natural
 language, then prove it in a fresh session. `bootstrap-repo` remains the explicit
-primitive. `first-run` is optional secondary guided memory help, not the modern
+primitive. `project resolve` reads that confirmed namespace from the current
+checkout without binding or refreshing. `first-run` is optional secondary guided memory help, not the modern
 Project Learning entrypoint. It is not the modern Project Learning.
 
 When the human explicitly says something equivalent to "Remember that we decided

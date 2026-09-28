@@ -32,6 +32,34 @@ User-facing recovery copy:
 - Changed clean HEAD: repository WHAT is temporarily stale. AMB will not present the previous snapshot as current repository truth. Explicitly rerun `bootstrap-repo . --namespace project:<name>`. Repository WHAT refreshes; durable project WHY is unchanged. Refresh is not automatic.
 - Missing binding: no current repository binding was found for this project namespace. Run `project init .` to detect the checkout and confirm a suggested namespace, or choose the namespace and run `bootstrap-repo . --namespace project:<name>`.
 
+## Read-only Project Resolution
+
+`project resolve [path]` turns the current checkout into the namespace already
+bound for that worktree. It is a read-only library and CLI contract for host
+adapters. It does not create a namespace, rebind one, or refresh repository WHAT,
+and it is not an MCP tool.
+
+The command prints one JSON object:
+
+- `status` `bound` and `namespace` when this worktree's repository identity has
+  exactly one governed binding. Exit status is 0 only in this case.
+- `status` `no_binding` when the checkout is a Git worktree and no binding
+  matches. Nothing is created.
+- `status` `ambiguous_binding` when more than one namespace matches, the binding
+  record is invalid, or `bindings.json` cannot be read. The result has no
+  namespace.
+- A dirty or unverifiable worktree can still resolve identity.
+  `repository_what.eligible` stays false, so dirty content is not treated as
+  commit-bound WHAT. A clean checkout whose stored snapshot is missing or stale
+  also stays ineligible until an explicit refresh.
+
+Linked worktrees and separate clones keep the existing local repository
+identity. A shared remote origin does not merge them. `source_client`,
+`source_model`, `client_workspace`, caller tags, and prompt text are ignored.
+Host adapters should read `namespace` from a `bound` result, or use
+`namespace_for_host_adapter`, instead of reconstructing `project:<slug>` from
+the directory name.
+
 ## Context and Inspect
 
 Read-only `inspect` shows repository WHAT in a separate `Repository knowledge (WHAT)` section and governed durable WHY in `Durable project memory (WHY)`. Repository entries retain source path, commit, and `derived_repository` authority. Durable entries retain their existing memory identity and governance explanations. A stale or unavailable repository source is reported as unavailable rather than relabeled as durable memory.

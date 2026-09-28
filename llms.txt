@@ -98,7 +98,7 @@ The historical `v0.27.0` release-install archive was
 <venv-python> -m agent_mem_bridge verify
 ```
 
-Use that same interpreter for `setup`, `project init`, `bootstrap-repo`, optional
+Use that same interpreter for `setup`, `project init`, `project resolve`, `bootstrap-repo`, optional
 `first-run`, or `config`. See `llms-install.md` for the real client-config,
 Project Learning store contract, and registration steps. `first-run` is
 secondary guided memory help, not the modern Project Learning entrypoint.
