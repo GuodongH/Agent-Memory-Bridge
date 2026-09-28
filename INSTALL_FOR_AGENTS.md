@@ -220,6 +220,12 @@ worktrees, changed HEAD, and missing bindings do not auto-refresh. Project Init
 may suggest a namespace, but it still requires explicit confirmation before
 binding.
 
+To read a namespace that is already bound to the current checkout, run
+`project resolve .`. It prints JSON and does not create, rebind, or refresh
+anything. A host adapter should use the `namespace` field from a `bound` result
+instead of reconstructing `project:<slug>` from the directory name. Provenance
+such as `client_workspace` does not choose the namespace. This is not an MCP tool.
+
 ## Optional First Run Guide
 
 `setup` owns safe client connection. After the client is connected, use
