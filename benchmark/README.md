@@ -14,6 +14,7 @@ the engine gets more expressive.
 - `python ./scripts/run_classifier_calibration.py`
 - `python ./scripts/run_classifier_calibration.py --fixture-gateway`
 - `python ./scripts/run_activation_stress_pack.py`
+- `python ./scripts/run_lifecycle_activation_benchmark.py check`
 - `python ./scripts/run_task_memory_benchmark.py`
 - `python ./scripts/run_procedure_governance_benchmark.py`
 - `python ./scripts/run_signal_contention_benchmark.py`
@@ -346,6 +347,25 @@ The report is written to `benchmark/latest-task-brief-report.json` and tracks:
 These metrics are local context-assembly checks. They are not a runtime adapter,
 watcher, scheduler, automatic reviewer, writeback executor, or a new MCP
 surface.
+
+
+## Lifecycle Activation v1
+
+`benchmark/lifecycle-activation-v1.json` and `benchmark/lifecycle-activation-v1.md`
+are a frozen host-activation measurement. `check` verifies the freeze and the
+embedded probes. `score` grades supplied observation traces. Neither command
+launches a host, rewrites a tracked snapshot, changes durable memory, or adds
+an MCP tool.
+
+A missing trace stays `NOT_RUN` or `INCONCLUSIVE`. The metrics stay separate;
+there is no overall score. A synthetic probe pass is not a live Codex or
+OpenCode result. OpenCode remains a runnable `NOT_RUN` lane until a complete
+live trace is scored. `collect-codex` runs the host in an allowlisted
+mount namespace and refuses to start if a preflight can still see a
+memory-only marker, the fixture store, or this checkout. A shell trace that
+reads the answer key is `INCONCLUSIVE` (`fixture_leak`). `instrument_pass`
+means the measurement setup is complete for the traces that were actually
+scored. It does not mean the host activated AMB correctly.
 
 ## Activation Stress
 
