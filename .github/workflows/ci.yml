@@ -107,6 +107,8 @@ jobs:
           src/agent_mem_bridge/http_transport.py
           src/agent_mem_bridge/http_probe.py
           src/agent_mem_bridge/filesystem_safety.py
+          src/agent_mem_bridge/activation_policy.py
+          src/agent_mem_bridge/lifecycle_activation.py
 
       - name: Core branch coverage
         run: >

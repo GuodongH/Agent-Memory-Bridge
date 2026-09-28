@@ -1,0 +1,46 @@
+{
+  "description": "Optional AMB lifecycle activation. Success is a hook decision, not an AGENTS.md export.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m agent_mem_bridge lifecycle-hook",
+            "commandWindows": "py -3 -m agent_mem_bridge lifecycle-hook",
+            "timeout": 10,
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m agent_mem_bridge lifecycle-hook",
+            "commandWindows": "py -3 -m agent_mem_bridge lifecycle-hook",
+            "timeout": 10,
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m agent_mem_bridge lifecycle-hook",
+            "commandWindows": "py -3 -m agent_mem_bridge lifecycle-hook",
+            "timeout": 10,
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ]
+  }
+}

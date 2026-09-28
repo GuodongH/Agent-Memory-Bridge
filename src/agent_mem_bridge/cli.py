@@ -136,6 +136,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_task_brief(namespace)
     if namespace.command == "activation-receipt":
         return _run_activation_receipt(namespace)
+    if namespace.command == "lifecycle-hook":
+        return _run_lifecycle_hook(namespace)
     if namespace.command == "mint-verification-receipt":
         return _run_mint_verification_receipt(namespace)
     if namespace.command == "signal-repair":
@@ -157,6 +159,25 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser.print_help()
     return 2
+
+
+def _run_lifecycle_hook(_namespace: argparse.Namespace) -> int:
+    raw = sys.stdin.read()
+    if not raw.strip():
+        print("{}")
+        return 0
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        print(json.dumps({"continue": True, "systemMessage": "AMB lifecycle hook ignored invalid input."}))
+        return 0
+    if not isinstance(payload, dict):
+        print(json.dumps({"continue": True, "systemMessage": "AMB lifecycle hook ignored invalid input."}))
+        return 0
+    from .lifecycle_activation import run_hook_payload
+
+    print(json.dumps(run_hook_payload(payload), ensure_ascii=False))
+    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -502,6 +523,10 @@ def _build_parser() -> argparse.ArgumentParser:
     activation_receipt_parser = subparsers.add_parser(
         "activation-receipt",
         help="Render a read-only cross-client activation receipt for a correlation id.",
+    )
+    subparsers.add_parser(
+        "lifecycle-hook",
+        help="Evaluate one optional host lifecycle event from stdin without writing durable memory.",
     )
     activation_receipt_parser.add_argument("--namespace", required=True, help="Namespace to inspect.")
     activation_receipt_parser.add_argument("--correlation-id", required=True, help="Correlation id to inspect.")
