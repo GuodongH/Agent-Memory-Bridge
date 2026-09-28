@@ -7,6 +7,22 @@ import { spawn } from "node:child_process";
 const HOOK_TIMEOUT_MS = 10000;
 
 function hookCommand() {
+  // Test-only command override. Not a user setting.
+  const override = process.env.AMB_LIFECYCLE_HOOK_COMMAND;
+  if (override) {
+    try {
+      const parsed = JSON.parse(override);
+      if (
+        Array.isArray(parsed) &&
+        parsed.length > 0 &&
+        parsed.every((part) => typeof part === "string" && part.length > 0)
+      ) {
+        return { command: parsed[0], args: parsed.slice(1) };
+      }
+    } catch {
+      // Invalid JSON falls back to the production command.
+    }
+  }
   if (process.platform === "win32") {
     return { command: "py", args: ["-3", "-m", "agent_mem_bridge", "lifecycle-hook"] };
   }
