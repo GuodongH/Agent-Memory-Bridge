@@ -874,6 +874,104 @@ def test_opencode_observation_writer_scores_only_a_gradeable_trace(tmp_path: Pat
     assert leaked_report["host_lanes"]["opencode"]["contaminated_case_ids"] == [case["id"]]
 
 
+def test_opencode_filesystem_read_of_the_store_cannot_score(tmp_path: Path) -> None:
+    pack = load_pack(version="v2")
+    case = next(item for item in pack["cases"] if item["id"] == "known-project-gotcha")
+    freeze = verify_freeze(version="v2")
+    marker = str(case["useful_marker"])
+    store_file = f"{OPENCODE_STORE_MOUNT}/lifecycle/hook-responses.jsonl"
+
+    def trace(tool: str, tool_input: dict[str, object], output: str, text: str = "done") -> str:
+        events = [
+            {
+                "type": "tool_use",
+                "part": {
+                    "tool": tool,
+                    "state": {"status": "completed", "input": tool_input, "output": output},
+                },
+            },
+            {"type": "text", "part": {"text": text}},
+            {"type": "step_finish", "part": {"reason": "stop"}},
+        ]
+        return "\n".join(json.dumps(event) for event in events)
+
+    def observation_for(raw: str) -> dict[str, object]:
+        parsed = parse_opencode_run_json(raw, interesting_paths=list(case["fixture"]["files"]))
+        return assemble_opencode_observation(
+            case=case,
+            pack_version="v2",
+            condition="plain_mcp_baseline",
+            model="recorded-model",
+            version="opencode 1.18.30",
+            parsed=parsed,
+            store_home=tmp_path / "store",
+            returncode=0,
+            elapsed_ms=5,
+            freeze=freeze,
+        )
+
+    leaked = observation_for(trace("read", {"filePath": store_file}, "1: secret"))
+    assert leaked["fixture_access"]["direct_read"] is True
+    assert "collector_path" in leaked["fixture_access"]["signals"]
+    report = score_pack(pack, [leaked], freeze=freeze)
+    result = next(item for item in report["results"] if item["id"] == case["id"])
+    assert result["status"] == "INCONCLUSIVE"
+    assert "fixture_leak" in result["reasons"]
+    assert report["host_lanes"]["opencode"]["status"] == "INCONCLUSIVE"
+    assert report["host_lanes"]["opencode"]["case_ids"] == []
+    assert report["host_lanes"]["opencode"]["contaminated_case_ids"] == [case["id"]]
+    assert report["instrument"]["checks"]["opencode_explicit"] is False
+    assert report["instrument"]["pass"] is False
+
+    copied = observation_for(trace("read", {"filePath": "/tmp/copied-hook.jsonl"}, marker))
+    assert copied["fixture_access"]["direct_read"] is True
+    assert "marker_in_command_output" in copied["fixture_access"]["signals"]
+    copied_report = score_pack(pack, [copied], freeze=freeze)
+    assert next(item for item in copied_report["results"] if item["id"] == case["id"])["status"] == "INCONCLUSIVE"
+    assert copied_report["host_lanes"]["opencode"]["status"] != "SCORED"
+    assert copied_report["instrument"]["pass"] is False
+
+    repo = observation_for(trace("read", {"filePath": "scripts/refresh_report.py"}, "script", text="no recall"))
+    assert repo["repo_paths_read"] == ["scripts/refresh_report.py"]
+    assert repo["fixture_access"]["direct_read"] is False
+    repo_report = score_pack(pack, [repo], freeze=freeze)
+    assert next(item for item in repo_report["results"] if item["id"] == case["id"])["status"] == "FAIL"
+    assert repo_report["host_lanes"]["opencode"]["status"] == "SCORED"
+    assert repo_report["host_lanes"]["opencode"]["case_ids"] == [case["id"]]
+
+    hidden_paths = [str(tmp_path / "store"), OPENCODE_STORE_MOUNT]
+    for tool, tool_input, output in (
+        ("grep", {"pattern": "token", "path": OPENCODE_STORE_MOUNT}, ""),
+        ("glob", {"pattern": "**/*.jsonl", "path": OPENCODE_STORE_MOUNT}, ""),
+        ("list", {"path": OPENCODE_STORE_MOUNT}, ""),
+        ("edit", {"filePath": store_file, "oldString": "a", "newString": "b"}, marker),
+        ("read", {"filePaths": [store_file]}, ""),
+        ("apply_patch", {"patchText": f"*** Update File: {store_file}\n"}, ""),
+    ):
+        parsed = parse_opencode_run_json(trace(tool, tool_input, output))
+        access = assess_fixture_access(
+            parsed["commands"],
+            markers=memory_only_markers(case),
+            hidden_paths=hidden_paths,
+        )
+        assert access["direct_read"] is True, tool
+
+    echoed = parse_opencode_run_json(
+        trace(
+            "edit",
+            {"filePath": "scripts/refresh_report.py", "oldString": "a", "newString": marker},
+            marker,
+        )
+    )
+    echoed_access = assess_fixture_access(
+        echoed["commands"],
+        markers=memory_only_markers(case),
+        hidden_paths=hidden_paths,
+    )
+    assert echoed_access["direct_read"] is False
+    assert echoed["repo_paths_read"] == []
+
+
 def test_collect_opencode_command_is_registered() -> None:
     import importlib
 

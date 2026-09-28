@@ -363,8 +363,9 @@ there is no overall score. A synthetic probe pass is not a live Codex or
 OpenCode result. OpenCode remains a runnable `NOT_RUN` lane until a complete
 live trace is scored. `collect-codex` runs the host in an allowlisted
 mount namespace and refuses to start if a preflight can still see a
-memory-only marker, the fixture store, or this checkout. A shell trace that
-reads the answer key is `INCONCLUSIVE` (`fixture_leak`). `instrument_pass`
+memory-only marker, the fixture store, or this checkout. A shell or filesystem
+tool trace that reads the answer key is `INCONCLUSIVE` (`fixture_leak`).
+`instrument_pass`
 means the measurement setup is complete for the traces that were actually
 scored. It does not mean the host activated AMB correctly.
 
