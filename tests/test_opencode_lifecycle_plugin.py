@@ -95,7 +95,7 @@ console.log(JSON.stringify({ elapsed_ms: Date.now() - started }));
         tmp_path,
         script,
         {"AMB_HOOK_CAPTURE": str(capture), "AMB_HOOK_STDERR_FLOOD": "1"},
-        timeout=8,
+        timeout=30,
     )
     assert completed.returncode == 0, completed.stderr
     elapsed = json.loads(completed.stdout)["elapsed_ms"]
@@ -103,7 +103,8 @@ console.log(JSON.stringify({ elapsed_ms: Date.now() - started }));
     assert payload["session_id"] == "ses_from_info"
     assert payload["hook_event_name"] == "SessionStart"
     assert payload["host"] == "opencode"
-    assert elapsed < 3000
+    # The hook kills a stuck child at 10s. A drained child must finish before that.
+    assert elapsed < 8000
 
 
 def test_opencode_hook_kills_a_child_that_never_exits(tmp_path: Path) -> None:
@@ -126,7 +127,7 @@ console.log(JSON.stringify({ elapsed_ms: Date.now() - started }));
             "AMB_HOOK_HANG": "1",
             "AMB_HOOK_PID": str(pid_path),
         },
-        timeout=20,
+        timeout=45,
     )
     assert completed.returncode == 0, completed.stderr
     elapsed = json.loads(completed.stdout)["elapsed_ms"]

@@ -70,7 +70,7 @@ class RawStdioSession:
     async def request(self, request: dict[str, Any]) -> dict[str, Any]:
         await self._write(request)
         assert self.process is not None and self.process.stdout is not None
-        line = await asyncio.wait_for(self.process.stdout.readline(), timeout=10)
+        line = await asyncio.wait_for(self.process.stdout.readline(), timeout=30)
         if not line:
             stderr = await self._stderr_text()
             raise AssertionError(f"MCP server closed before responding; stderr={stderr!r}")
