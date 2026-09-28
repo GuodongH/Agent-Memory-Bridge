@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import re
 import sqlite3
@@ -942,7 +943,7 @@ def _run_benchmark_case(store_type: Any, temporary_directory: Any, case: Mapping
         positive = sum(1 for receipt in receipts for item in receipt["items"] if item["disposition"] == "stored")
         negative_writes = sum(receipt["writes"] for receipt in receipts) if case.get("negative_control") else 0
         promotions = sum(receipt["promotions"] for receipt in receipts)
-        return {
+        observation = {
             "id": case["id"],
             "passed": passed,
             "positive_captures": positive,
@@ -952,6 +953,11 @@ def _run_benchmark_case(store_type: Any, temporary_directory: Any, case: Mapping
             or [receipt["disposition"] for receipt in receipts],
             "candidate_count": candidate_count,
         }
+        # SQLite closes connections on collection. Windows cannot delete the
+        # database file while that collection is still pending.
+        del store
+        gc.collect()
+    return observation
 
 
 def _benchmark_passed(
