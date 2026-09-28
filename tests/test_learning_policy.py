@@ -201,6 +201,28 @@ def test_policy_denies_sensitive_excluded_authority_class() -> None:
     assert "sensitive_content" in decision["reasons"]
 
 
+def test_policy_lifecycle_capture_requires_review_even_for_context_hint() -> None:
+    decision = evaluate_learning_candidate(_candidate(capture_origin="lifecycle_capture"))
+
+    assert decision["decision"] == "needs_review"
+    assert decision["would_write"] is False
+    assert "lifecycle_capture_review_required" in decision["reasons"]
+
+
+def test_policy_lifecycle_capture_still_denies_secret() -> None:
+    decision = evaluate_learning_candidate(
+        _candidate(
+            capture_origin="lifecycle_capture",
+            claim="Store API key sk-1234567890abcdef for the deployment bot.",
+        )
+    )
+
+    assert decision["decision"] == "deny"
+    assert decision["would_write"] is False
+    assert "sensitive_content" in decision["reasons"]
+    assert "lifecycle_capture_review_required" not in decision["reasons"]
+
+
 def test_policy_routes_valid_release_evidence_to_review() -> None:
     decision = evaluate_learning_candidate(
         _candidate(

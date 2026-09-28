@@ -20,6 +20,7 @@ the engine gets more expressive.
 - `python ./scripts/run_adversarial_benchmark.py`
 - `python ./scripts/run_memory_evolution_benchmark.py`
 - `python ./scripts/run_review_queue_benchmark.py`
+- `python ./scripts/run_write_side_capture_benchmark.py`
 - `python ./scripts/run_review_workflow_benchmark.py`
 - `python ./scripts/run_task_brief_benchmark.py`
 - `python ./scripts/run_v019_adoption_proof.py`

@@ -144,6 +144,8 @@ def evaluate_learning_candidate(
         review_reasons.append("review_required")
     if candidate.get("contradicts_record_ids"):
         review_reasons.append("review_required")
+    if str(candidate.get("capture_origin", "")).strip() == "lifecycle_capture":
+        review_reasons.append("lifecycle_capture_review_required")
 
     if review_reasons:
         return _decision(
@@ -197,6 +199,9 @@ def _candidate_scan_text(candidate: Mapping[str, Any]) -> str:
         "claim",
         "evidence_refs",
         "supersession_plan",
+        "reuse_reason",
+        "symptom",
+        "fix",
         "namespace",
         "source_session_id",
         "source_task_id",

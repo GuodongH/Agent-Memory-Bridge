@@ -176,6 +176,20 @@ def build_learning_candidate_record(
             sort_keys=True,
         ),
         "supersession_plan": str(candidate.get("supersession_plan", "")),
+        "recommended_action": str(candidate.get("recommended_action", "")).strip(),
+        "reuse_reason": " ".join(str(candidate.get("reuse_reason", "")).split()).strip(),
+        "relation": str(candidate.get("relation", "")).strip(),
+        "scope": str(candidate.get("scope", "")).strip(),
+        "capture_boundary": str(candidate.get("capture_boundary", "")).strip(),
+        "capture_class": str(candidate.get("capture_class", "")).strip(),
+        "visible_artifact_id": str(candidate.get("visible_artifact_id", "")).strip(),
+        "visible_artifact_ids_json": json.dumps(
+            visible_artifact_ids,
+            ensure_ascii=True,
+            sort_keys=True,
+        )
+        if (visible_artifact_ids := _list_value(candidate.get("visible_artifact_ids")))
+        else "",
     }
     return "\n".join(f"{key}: {value}" for key, value in fields.items() if str(value).strip())
 
