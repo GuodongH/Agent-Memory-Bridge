@@ -191,6 +191,41 @@
       "expect_candidate_count": 0
     },
     {
+      "id": "stale-exact-durable-revalidation",
+      "seed": [
+        {
+          "namespace": "project:capture-bench",
+          "title": "Superseded decision",
+          "content": "Use the hidden review lane again after the old durable copy is superseded.",
+          "tags": ["status:stale"]
+        }
+      ],
+      "event": {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "session_stop",
+        "namespace": "project:capture-bench",
+        "source_runtime": "codex",
+        "source_session_id": "session-revalidate",
+        "source_task_id": "task-revalidate",
+        "visible_artifacts": [
+          {
+            "schema": "memory.visible_artifact.v1",
+            "artifact_id": "revalidate-1",
+            "artifact_class": "decision",
+            "claim": "Use the hidden review lane again after the old durable copy is superseded.",
+            "reason": "A later session re-established the same claim after the old copy was marked stale.",
+            "evidence_refs": ["visible:session_stop:revalidate-1"]
+          }
+        ]
+      },
+      "expect_event_dispositions": ["captured"],
+      "expect_item_dispositions": ["stored"],
+      "expect_recommended_action": ["revalidate"],
+      "expect_candidate_count": 1,
+      "expect_explicit_recalled": true,
+      "expect_hidden_query": "Reviewer must revalidate, replace, or reject this fresh confirmation explicitly."
+    },
+    {
       "id": "stale-user-correction",
       "seed": [
         {

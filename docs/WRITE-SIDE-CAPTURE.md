@@ -18,9 +18,12 @@ The store step recomputes the writeback decision. Caller fields such as `decisio
 
 Before inserting a new candidate, capture compares the normalized claim with durable memory and open candidates in the same namespace:
 
-- the same durable claim is not captured again; the receipt says `reject`
+- the same current durable claim is not captured again; the receipt says `reject`
+- the same claim on only a stale or superseded durable row is stored for review; the receipt says `revalidate`, and the old row is neither revived nor changed
 - the same open candidate is strengthened in place; the receipt says `merge`
 - a contradiction or user correction is stored for review; the receipt says `revise`, and the contradicted row is not changed
+
+`automatic_promotion` is decided only from the rows this capture inserted or updated. A durable write from another session in the same namespace does not count.
 
 The checked benchmark is `benchmark/write-side-capture-cases.json`. Run it with:
 
