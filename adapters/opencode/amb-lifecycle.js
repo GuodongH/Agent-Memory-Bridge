@@ -1,31 +1,79 @@
 // Optional OpenCode wiring for the shared Python lifecycle entrypoint.
-// Prompt-level activation is a pending lane. The plugin surface inspected on
-// 2026-09-26 exposes session and compaction hooks, not a prompt hook that can
-// be used without per-token spam. Do not bind message.updated.
+// Prompt-level activation is a pending lane. The plugin surface exposes session
+// and compaction hooks, not a prompt hook that can be used without per-token
+// spam. Do not bind message.updated.
 import { spawn } from "node:child_process";
 
+const HOOK_TIMEOUT_MS = 10000;
+
+function hookCommand() {
+  if (process.platform === "win32") {
+    return { command: "py", args: ["-3", "-m", "agent_mem_bridge", "lifecycle-hook"] };
+  }
+  return { command: "python3", args: ["-m", "agent_mem_bridge", "lifecycle-hook"] };
+}
+
+function stopChild(child) {
+  if (!child || child.pid == null) {
+    return;
+  }
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+
 function runHook(payload) {
-  const command = process.platform === "win32" ? "py" : "python3";
-  const args =
-    process.platform === "win32"
-      ? ["-3", "-m", "agent_mem_bridge", "lifecycle-hook"]
-      : ["-m", "agent_mem_bridge", "lifecycle-hook"];
+  const { command, args } = hookCommand();
   return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
-    let out = "";
-    child.stdout.on("data", (chunk) => {
-      out += chunk;
+    let settled = false;
+    const child = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+      windowsHide: true,
     });
-    child.on("error", () => resolve({}));
+    let out = "";
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      stopChild(child);
+      finish({});
+    }, HOOK_TIMEOUT_MS);
+    child.stdout.on("data", (chunk) => {
+      if (out.length < 100000) {
+        out += chunk;
+      }
+    });
+    child.stderr.on("data", () => {
+      // Drain stderr so a noisy child cannot block on a full pipe.
+    });
+    child.on("error", () => finish({}));
     child.on("close", () => {
       try {
-        resolve(JSON.parse(out));
+        finish(JSON.parse(out));
       } catch {
-        resolve({});
+        finish({});
       }
     });
     child.stdin.end(JSON.stringify(payload));
   });
+}
+
+function sessionIdFromCreated(event) {
+  const properties = (event && event.properties) || {};
+  const info = properties.info || {};
+  return info.id || properties.sessionID || properties.sessionId || "";
 }
 
 export const AmbLifecycle = async ({ directory, worktree }) => {
@@ -35,13 +83,12 @@ export const AmbLifecycle = async ({ directory, worktree }) => {
       if (!event || event.type !== "session.created") {
         return;
       }
-      const properties = event.properties || {};
       await runHook({
         host: "opencode",
         hook_event_name: "SessionStart",
         source: "startup",
         cwd,
-        session_id: properties.sessionID || properties.sessionId || "",
+        session_id: sessionIdFromCreated(event),
       });
     },
     "experimental.session.compacting": async (input, output) => {

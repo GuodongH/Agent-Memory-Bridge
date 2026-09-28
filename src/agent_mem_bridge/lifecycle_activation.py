@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from .paths import (
     resolve_bridge_db_path,
     resolve_bridge_home,
     resolve_bridge_log_dir,
+    resolve_remote_authority_url,
     resolve_repository_snapshot_root,
 )
 from .project_resolution import namespace_for_host_adapter, resolve_project_context
@@ -67,6 +69,7 @@ _EVIDENCE_FIELDS = (
     "repository_id",
     "candidate_namespaces",
     "ignored_caller_scope",
+    "authority_mode",
     "availability",
     "recall_invoked",
     "recall_state",
@@ -93,6 +96,7 @@ class ActivationObservation:
     repository_id: str
     candidate_namespaces: tuple[str, ...]
     ignored_caller_scope: bool
+    authority_mode: str
     availability: str
     recall_invoked: bool
     recall_state: str
@@ -122,6 +126,7 @@ class ActivationObservation:
             "repository_id": self.repository_id,
             "candidate_namespaces": list(self.candidate_namespaces),
             "ignored_caller_scope": self.ignored_caller_scope,
+            "authority_mode": self.authority_mode,
             "availability": self.availability,
             "recall_invoked": self.recall_invoked,
             "recall_state": self.recall_state,
@@ -228,9 +233,11 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
             recall_requested = False
             repeat_suppressed = True
             decision = "skip"
-            rule_id = "not-repeat-sufficient-recall"
+            rule_id = "exact-prompt-repeat"
 
-    availability = _availability()
+    authority = resolve_activation_authority()
+    availability = str(authority["availability"])
+    authority_mode = str(authority["mode"])
     recall_invoked = False
     recall_state = "skipped"
     recalled_ids: tuple[str, ...] = ()
@@ -246,10 +253,11 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
             "no_binding": "no-project-binding",
         }.get(str(scope["status"]), "project-scope-unavailable")
         context = _scope_block_context(str(scope["status"]))
-    elif recall_requested and availability != "available":
-        decision = policy_action
-        recall_state = "unavailable"
-        context = "AMB was unavailable, so no recall ran. This is not an empty memory result."
+    elif recall_requested and not authority["recall_permitted"]:
+        decision = "unsupported" if authority_mode == "remote" else "unknown"
+        rule_id = "adapter-backend-unsupported" if authority_mode == "remote" else "authority-unknown"
+        recall_state = "skipped"
+        context = _authority_block_context(authority_mode)
     elif recall_requested:
         recall_invoked = True
         try:
@@ -257,7 +265,7 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
         except Exception as exc:  # noqa: BLE001 - hook must fail closed without echoing the prompt
             recall_state = "error"
             error_type = type(exc).__name__
-            context = "AMB recall failed. Treat the bridge as unavailable, not as an empty memory result."
+            context = "Local AMB recall failed. This is not an empty memory result."
         else:
             useful, irrelevant, stale = _partition(items, prompt)
             recalled_ids = tuple(str(item.get("id") or "") for item in useful + irrelevant if item.get("id"))
@@ -296,6 +304,7 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
         repository_id=str(scope["repository_id"]),
         candidate_namespaces=tuple(scope["candidate_namespaces"]),
         ignored_caller_scope=ignored_caller_scope,
+        authority_mode=authority_mode,
         availability=availability,
         recall_invoked=recall_invoked,
         recall_state=recall_state,
@@ -351,11 +360,42 @@ def render_hook_response(payload: Mapping[str, Any], observation: ActivationObse
     return {"continue": True}
 
 
-def _availability() -> str:
+def resolve_activation_authority() -> dict[str, Any]:
+    """Choose the recall backend without treating a missing local file as AMB downtime.
+
+    V1 can open only a selected local SQLite authority. An explicit remote
+    authority URL means the canonical store is elsewhere: do not open a local
+    database, and do not describe that as an unavailable bridge.
+    """
+
     try:
-        return "available" if resolve_bridge_db_path().is_file() else "unavailable"
+        remote_url = _explicit_remote_authority_url()
+    except (OSError, tomllib.TOMLDecodeError):
+        return {"mode": "unknown", "availability": "unknown", "recall_permitted": False}
+    if remote_url:
+        return {"mode": "remote", "availability": "adapter_backend_unsupported", "recall_permitted": False}
+    try:
+        local_db_present = resolve_bridge_db_path().is_file()
     except OSError:
-        return "unavailable"
+        local_db_present = False
+    if not local_db_present:
+        return {"mode": "unknown", "availability": "unknown", "recall_permitted": False}
+    return {"mode": "local", "availability": "available", "recall_permitted": True}
+
+
+def _explicit_remote_authority_url() -> str:
+    return resolve_remote_authority_url() or ""
+
+
+def _authority_block_context(mode: str) -> str:
+    if mode == "remote":
+        return (
+            "A remote AMB authority is configured. This lifecycle adapter does not open a local database "
+            "and does not call that remote authority yet. This is not an unavailable bridge and not an empty memory result."
+        )
+    return (
+        "No local AMB authority database is selected. This is not an unavailable bridge and not an empty memory result."
+    )
 
 
 def _recall(namespace: str, query: str) -> list[dict[str, Any]]:

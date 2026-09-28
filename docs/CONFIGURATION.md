@@ -465,6 +465,7 @@ section alone if you only want the basic bridge runtime.
 | `AGENT_MEMORY_BRIDGE_CONFIG` | path to the active `config.toml` |
 | `AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT` | optional provenance default for the launching client |
 | `AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT` | optional transport default, usually `stdio` |
+| `AGENT_MEMORY_BRIDGE_AUTHORITY_URL` | optional remote Streamable HTTP authority URL; when set, the lifecycle hook does not open a local database |
 | `AGENT_MEMORY_BRIDGE_RETRIEVAL_MODE` | `lexical`, `semantic`, or `hybrid` |
 | `AGENT_MEMORY_BRIDGE_SEMANTIC_SCAN_LIMIT` | provider batch size while exact semantic recall fills missing/stale embeddings |
 | `AGENT_MEMORY_BRIDGE_HYBRID_SEMANTIC_WEIGHT` | fusion weight used when hybrid combines semantic sidecar scores with lexical results |
