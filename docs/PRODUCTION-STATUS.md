@@ -12,7 +12,7 @@ This page is the canonical reference for **checked-in current-source facts**: im
 | Public tool-schema digest | `24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8` |
 | Runtime model | Default local stdio and optional standard Streamable HTTP over one host-local SQLite/WAL authority; FTS5 and optional embeddings are derived indexes |
 
-Current source test collection: `1108 tests`
+Current source test collection: `1120 tests`
 
 > A tag is not a GitHub Release, and live CI or package-index state is not host certification, a distribution guarantee, or a productivity result. Installation guidance retains explicit publication and source-checkout gates.
 
@@ -53,6 +53,8 @@ V0.30 adds a persistent, bounded, rebuildable derived repository snapshot. Expli
 ### Project Learning UX
 
 V0.32.0 introduced the current Project Learning UX. Default Explore presents repository CODE / WHAT separately from governed CONVERSATION / WHY. `project init` is the preferred first-project path: it detects a local Git checkout, proposes a namespace, requires explicit confirmation, revalidates after confirmation, bootstraps derived repository WHAT, and shows Human-first Explore. Repeat init refreshes repository WHAT and leaves existing project WHY unchanged. This is not automatic learning and does not add an MCP tool.
+
+Current source can also read that binding back. `project resolve [path]` returns the governed namespace for the current worktree when exactly one binding matches. It writes nothing: an unbound checkout stays `no_binding`, and conflicting or unreadable bindings fail closed as `ambiguous_binding`. A dirty or stale checkout can still be identified, while stored repository WHAT stays ineligible. Windows local origin paths that differ only by slash, drive-letter case, or a trailing `.git` share one logical remote identity; distinct local clones and linked worktrees stay distinct. This command is not an MCP tool.
 
 ### Project WHY Alignment
 

@@ -283,7 +283,30 @@ def test_posix_and_windows_path_spellings_follow_repository_identity(
         == right["repository_identity"]["logical_repository_identity"]
     )
     assert left["repository_identity"]["repository_id"] != right["repository_identity"]["repository_id"]
-    assert _safe_remote_identity(r"C:\src\repo.git") != _safe_remote_identity("C:/src/repo.git")
+    windows_remotes = (
+        r"C:\src\repo.git",
+        "C:/src/repo.git",
+        r"c:\src\repo\\",
+        "C:/SRC/repo.git",
+    )
+    assert {_safe_remote_identity(remote) for remote in windows_remotes} == {"file/c:/src/repo"}
+    checkout = tmp_path / "same-checkout"
+    checkout.mkdir()
+    current_remote = {"value": windows_remotes[0]}
+
+    def fake_remote(root: Path, *args: str) -> str | None:
+        if args == ("rev-parse", "--show-toplevel"):
+            return str(checkout)
+        if args == ("config", "--get", "remote.origin.url"):
+            return current_remote["value"]
+        return None
+
+    monkeypatch.setattr("agent_mem_bridge.repository_snapshot_store._git", fake_remote)
+    repository_ids = []
+    for remote in windows_remotes:
+        current_remote["value"] = remote
+        repository_ids.append(repository_identity(checkout)["repository_id"])
+    assert len(set(repository_ids)) == 1
 
 
 def test_provenance_fields_cannot_override_binding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -18,7 +18,7 @@ Each stored snapshot records a repository identity, identity basis, Git root, op
 
 ## Repository Identity
 
-When an origin remote is available, the sanitized remote is retained as logical grouping metadata, but it is not the local source identity. The `local_repository_source_id` incorporates the canonical local Git root, so two clones or worktrees of the same logical remote have distinct local source IDs and distinct snapshot slots. Repositories without remotes likewise use their canonical local Git root. Moving a local clone changes its local source identity; explicit re-bootstrap/rebind is required, and AMB does not silently follow moved roots.
+When an origin remote is available, the sanitized remote is retained as logical grouping metadata, but it is not the local source identity. The `local_repository_source_id` incorporates the canonical local Git root, so two clones or worktrees of the same logical remote have distinct local source IDs and distinct snapshot slots. Repositories without remotes likewise use their canonical local Git root. Moving a local clone changes its local source identity; explicit re-bootstrap/rebind is required, and AMB does not silently follow moved roots. Windows local origin paths that differ only by slash, drive-letter case, or a trailing `.git` share one logical remote identity. Distinct local Git roots still stay distinct.
 
 ## Namespace Binding
 
