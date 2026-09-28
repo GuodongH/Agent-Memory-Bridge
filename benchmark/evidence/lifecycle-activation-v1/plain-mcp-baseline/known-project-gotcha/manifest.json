@@ -1,0 +1,23 @@
+{
+  "schema": "amb.lifecycle-activation-evidence-bundle.v1",
+  "condition": "plain_mcp_baseline",
+  "case_id": "known-project-gotcha",
+  "host": {
+    "id": "codex",
+    "version": "codex-cli 0.157.1",
+    "model": "grok-4.7-build-fast"
+  },
+  "plugins": false,
+  "cli_flags": [
+    "--disable",
+    "plugins",
+    "--disable",
+    "memories"
+  ],
+  "freeze_sha256": {
+    "benchmark/lifecycle-activation-v1.json": "501e7ad4cfaf91496f5f39878c88cecb659967b33ec7ff1470bee92340748e03",
+    "benchmark/lifecycle-activation-v1.md": "127befea32b094b969510b8accbf315b7ebab91121d1ede20666d17e8703f2b3"
+  },
+  "scorer_sha256": null,
+  "note": "Collected before scorer identity existed. Re-scoring this observation is INCONCLUSIVE. Re-parsing codex.jsonl under the current scorer remains FAIL with required_recall_miss. This is not adapter evidence."
+}

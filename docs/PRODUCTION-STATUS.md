@@ -12,7 +12,7 @@ This page is the canonical reference for **checked-in current-source facts**: im
 | Public tool-schema digest | `24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8` |
 | Runtime model | Default local stdio and optional standard Streamable HTTP over one host-local SQLite/WAL authority; FTS5 and optional embeddings are derived indexes |
 
-Current source test collection: `1150 tests`
+Current source test collection: `1177 tests`
 
 > A tag is not a GitHub Release, and live CI or package-index state is not host certification, a distribution guarantee, or a productivity result. Installation guidance retains explicit publication and source-checkout gates.
 
@@ -36,7 +36,7 @@ The `v0.28.0` tag identifies the historical release merge snapshot `c6e3568a5985
 
 ### Optional host lifecycle activation
 
-Current source includes an optional host hook, `lifecycle-hook`, for Codex and OpenCode. It resolves the checkout through `project resolve` and may recall once from a selected local SQLite authority. It is not loaded by plain MCP use, does not add a public tool, and does not write durable memory. An exact repeated prompt is suppressed; a reworded prompt can recall again. `AGENT_MEMORY_BRIDGE_AUTHORITY_URL` or `[deployment].authority_url` marks a remote Streamable HTTP authority. The hook then does not open a local database and reports `adapter_backend_unsupported` rather than calling that remote server or treating a stale local file as authority. A missing local database is `unknown`, not an empty recall and not a claim that AMB is down. OpenCode prompt activation remains pending. Live Codex and OpenCode session evidence is not claimed.
+Current source includes an optional host hook, `lifecycle-hook`, for Codex and OpenCode. It resolves the checkout through `project resolve` and may recall once from a selected local SQLite authority. It is not loaded by plain MCP use, does not add a public tool, and does not write durable memory. An exact repeated prompt is suppressed; a reworded prompt can recall again. `AGENT_MEMORY_BRIDGE_AUTHORITY_URL` or `[deployment].authority_url` marks a remote Streamable HTTP authority. The hook then does not open a local database and reports `adapter_backend_unsupported` rather than calling that remote server or treating a stale local file as authority. A missing local database is `unknown`, not an empty recall and not a claim that AMB is down. OpenCode prompt activation remains pending. The frozen lifecycle benchmark has one collected Codex trace: `plain_mcp_baseline` / `known-project-gotcha` = FAIL, with plugins disabled. That trace is not adapter evidence. OpenCode and the adapter-enabled condition have no passing live trace.
 
 ### v0.34 remote authority deployment
 

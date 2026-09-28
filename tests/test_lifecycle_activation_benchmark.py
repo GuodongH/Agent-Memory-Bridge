@@ -22,14 +22,17 @@ from tools.evidence.lifecycle_activation import (
     mount_would_expose,
     parse_codex_exec_jsonl,
     prepare_collector_layout,
+    prepare_governed_fixture,
     render_collector_codex_preamble,
     render_isolated_codex_config,
     render_local_proxy_mcp_stanza,
     sandbox_for_case,
     score_observation,
     score_pack,
+    scorer_sha256,
     seed_case_memories,
     validate_pack,
+    verify_freeze,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -239,15 +242,14 @@ def test_codex_collector_keeps_the_store_out_of_the_workspace(tmp_path: Path) ->
 
 def test_direct_store_read_is_not_a_host_result() -> None:
     case = _case("known-project-gotcha")
-    observation = expand_probe(case, case["probes"]["adequate_good"])
-    observation["execution_kind"] = "live"
-    observation["host"] = {"id": "codex", "version": "test", "model": "none"}
+    observation = _complete_live(case, expand_probe(case, case["probes"]["adequate_good"]))
     observation["fixture_access"] = {
         "direct_read": True,
         "signals": ["marker_in_command_output"],
         "command_count": 1,
     }
-    result = score_observation(case, observation)
+    freeze = verify_freeze()
+    result = score_observation(case, observation, expected_freeze=freeze)
     assert result["status"] == "INCONCLUSIVE"
     assert "fixture_leak" in result["reasons"]
     assert result["required_recall_hit"] is None
@@ -255,7 +257,7 @@ def test_direct_store_read_is_not_a_host_result() -> None:
     assert lanes["codex"]["status"] == "INCONCLUSIVE"
     assert lanes["codex"]["case_ids"] == []
     assert lanes["codex"]["contaminated_case_ids"] == ["known-project-gotcha"]
-    report = score_pack(load_pack(), [observation], freeze={"ok": True})
+    report = score_pack(load_pack(), [observation], freeze=freeze)
     assert report["instrument"]["checks"]["codex_live_trace"] is False
 
 
@@ -415,3 +417,175 @@ def test_secret_redaction_does_not_change_short_labels() -> None:
     module = importlib.import_module("run_lifecycle_activation_benchmark")
     assert module._redact("live", ["secret-value"]) == "live"
     assert module._redact("secret-value", ["secret-value"]) == "[redacted]"
+
+
+def _complete_live(case: dict, observation: dict | None = None) -> dict:
+    freeze = verify_freeze()
+    base = dict(observation or {})
+    base.setdefault("schema", "amb.lifecycle-activation-observation.v1")
+    base.setdefault("case_id", case["id"])
+    base["execution_kind"] = "live"
+    base.setdefault("terminal_event", "turn.completed")
+    base.setdefault("collector_exit_code", 0)
+    base.setdefault("condition", "plain_mcp_baseline")
+    base.setdefault("final_text", "done")
+    base.setdefault("tool_calls", [])
+    base.setdefault("repo_paths_read", [])
+    base.setdefault("amb_available", case["fixture"]["amb_mode"] == "available")
+    host = base.get("host")
+    if not isinstance(host, dict) or host.get("id") not in {"codex", "opencode"}:
+        base["host"] = {"id": "codex", "version": "test", "model": "none"}
+    base["scorer_sha256"] = scorer_sha256()
+    base["freeze_sha256"] = dict(freeze["actual"])
+    base["trace_complete"] = True
+    return base
+
+
+def test_partial_live_trace_is_inconclusive_not_a_product_fail() -> None:
+    case = _case("known-project-gotcha")
+    observation = _complete_live(case)
+    observation["terminal_event"] = "item.completed"
+    observation["collector_exit_code"] = None
+    result = score_observation(case, observation, expected_freeze=verify_freeze())
+    assert result["status"] == "INCONCLUSIVE"
+    assert "trace_incomplete" in result["reasons"]
+    assert "required_recall_miss" not in result["reasons"]
+    assert result["required_recall_hit"] is None
+
+
+def test_live_scorer_mismatch_is_inconclusive() -> None:
+    case = _case("known-project-gotcha")
+    observation = _complete_live(case)
+    observation["scorer_sha256"] = "0" * 64
+    result = score_observation(case, observation, expected_freeze=verify_freeze())
+    assert result["status"] == "INCONCLUSIVE"
+    assert "scorer_mismatch" in result["reasons"]
+
+
+def test_archived_plain_mcp_baseline_stays_a_fail_when_reparsed() -> None:
+    bundle = ROOT / "benchmark/evidence/lifecycle-activation-v1/plain-mcp-baseline/known-project-gotcha"
+    raw = json.loads((bundle / "observation.json").read_text(encoding="utf-8"))
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+    archived = json.loads((bundle / "report.json").read_text(encoding="utf-8"))
+    case = _case("known-project-gotcha")
+    assert manifest["condition"] == "plain_mcp_baseline"
+    assert manifest["plugins"] is False
+    assert manifest["scorer_sha256"] is None
+    archived_case = next(item for item in archived["results"] if item["id"] == case["id"])
+    assert archived_case["status"] == "FAIL"
+    assert "required_recall_miss" in archived_case["reasons"]
+    rescored = score_observation(case, raw, expected_freeze=verify_freeze())
+    assert rescored["status"] == "INCONCLUSIVE"
+    assert "scorer_missing" in rescored["reasons"]
+    parsed = parse_codex_exec_jsonl(
+        (bundle / "codex.jsonl").read_text(encoding="utf-8"),
+        interesting_paths=list(case["fixture"]["files"]),
+    )
+    assert parsed["terminal_event"] == "turn.completed"
+    assert parsed["final_text"].strip()
+    rebuilt = _complete_live(
+        case,
+        {
+            "tool_calls": parsed["tool_calls"],
+            "final_text": parsed["final_text"],
+            "repo_paths_read": parsed["repo_paths_read"],
+            "terminal_event": parsed["terminal_event"],
+            "collector_exit_code": raw["collector_exit_code"],
+            "condition": "plain_mcp_baseline",
+            "amb_available": True,
+        },
+    )
+    result = score_observation(case, rebuilt, expected_freeze=verify_freeze())
+    assert result["status"] == "FAIL"
+    assert result["condition"] == "plain_mcp_baseline"
+    assert "required_recall_miss" in result["reasons"]
+
+
+def test_adapter_without_hook_evidence_is_not_a_product_fail() -> None:
+    case = _case("known-project-gotcha")
+    observation = _complete_live(case)
+    observation["condition"] = "adapter_enabled"
+    observation["adapter"] = {"loaded": False}
+    observation["final_text"] = str(case["useful_marker"])
+    result = score_observation(case, observation, expected_freeze=verify_freeze())
+    assert result["status"] == "INCONCLUSIVE"
+    assert "adapter_not_observed" in result["reasons"]
+    assert "required_recall_miss" not in result["reasons"]
+
+
+def test_adapter_evidence_recall_can_pass_without_a_model_mcp_call() -> None:
+    case = _case("known-project-gotcha")
+    observation = _complete_live(case)
+    observation["condition"] = "adapter_enabled"
+    observation["adapter"] = {"loaded": True}
+    observation["final_text"] = str(case["useful_marker"])
+    observation["adapter_evidence"] = [
+        {
+            "adapter_loaded": True,
+            "recall_invoked": True,
+            "namespace": case["expected_namespace"],
+            "recall_state": "hit",
+            "result_text": f"gotcha token: {case['useful_marker']}",
+        }
+    ]
+    result = score_observation(case, observation, expected_freeze=verify_freeze())
+    assert result["status"] == "PASS", result["reasons"]
+    wrong = dict(observation)
+    wrong["adapter_evidence"] = [
+        {
+            "adapter_loaded": True,
+            "recall_invoked": True,
+            "namespace": "project:other-fixture",
+            "recall_state": "hit",
+            "result_text": f"gotcha token: {case['useful_marker']}",
+        }
+    ]
+    missed = score_observation(case, wrong, expected_freeze=verify_freeze())
+    assert missed["status"] == "FAIL"
+    assert "namespace_miss" in missed["reasons"]
+
+
+def test_adapter_collector_does_not_disable_plugins(tmp_path: Path) -> None:
+    argv = build_codex_collect_argv(
+        sandbox="read-only",
+        model="grok-4.7-build-fast",
+        fixture_repo=tmp_path / "checkout",
+        output_path=tmp_path / "last.md",
+        prompt="Reply with the token.",
+        condition="adapter_enabled",
+    )
+    pairs = list(zip(argv, argv[1:]))
+    assert ("--disable", "plugins") not in pairs
+    assert ("--disable", "memories") in pairs
+    assert "--dangerously-bypass-hook-trust" in argv
+    preamble = render_collector_codex_preamble(
+        catalog_path=str(tmp_path / "catalog.json"),
+        fixture_repo=str(tmp_path / "checkout"),
+        plugins=True,
+    )
+    assert "plugins = true" in preamble
+    assert "memories = false" in preamble
+
+
+def test_v2_fixture_resolves_namespace_from_the_git_binding(tmp_path: Path) -> None:
+    from agent_mem_bridge.project_resolution import resolve_project_context
+
+    pack = load_pack(version="v2")
+    assert validate_pack(pack, "v2") == []
+    case = next(item for item in pack["cases"] if item["id"] == "known-project-gotcha")
+    assert case["expected_namespace"] not in case["prompt"]
+    for content in case["fixture"]["files"].values():
+        assert case["expected_namespace"] not in content
+    prepared = prepare_governed_fixture(case, tmp_path / "prepared", host="opencode")
+    command = prepared["command"]
+    assert "<" not in command and ">" not in command
+    assert "opencode run" in command
+    assert "grok-4.7-build-fast" in command
+    assert prepared["fixture_repo"].joinpath(".git").exists()
+    resolved = resolve_project_context(
+        prepared["fixture_repo"],
+        snapshot_root=prepared["bridge_home"] / "repository",
+    )
+    assert resolved["status"] == "bound"
+    assert resolved["namespace"] == case["expected_namespace"]
+    assert case["expected_namespace"] not in prepared["prompt_path"].read_text(encoding="utf-8")
