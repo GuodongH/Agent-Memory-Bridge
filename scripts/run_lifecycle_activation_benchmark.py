@@ -31,14 +31,24 @@ from tools.evidence.lifecycle_activation import (
     load_pack,
     materialize_fixture,
     memory_only_markers,
+    OPENCODE_STORE_MOUNT,
     parse_codex_exec_jsonl,
     prepare_collector_layout,
     prepare_governed_fixture,
     render_collector_codex_preamble,
+    assemble_opencode_observation,
+    build_opencode_exec_argv,
+    build_opencode_sandbox_argv,
+    install_isolated_opencode,
+    parse_opencode_run_json,
+    PLAN_LOOPBACK_MCP_URL,
     render_host_plan,
     render_isolated_codex_config,
     render_local_proxy_mcp_stanza,
+    render_opencode_hook_command,
+    render_opencode_remote_config,
     render_text,
+    write_scored_observation,
     sandbox_for_case,
     score_pack,
     scorer_sha256,
@@ -77,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
         return _score(args.observations, args.format, args.report_path, args.pack)
     if args.command == "collect-codex":
         return collect_codex(args.case_id, args.out, args.model, args.timeout, args.pack, args.condition)
+    if args.command == "collect-opencode":
+        return collect_opencode(args.case_id, args.out, args.model, args.timeout, args.pack, args.condition)
     parser.error(f"unsupported command {args.command}")
     return 2
 
@@ -563,6 +575,207 @@ def collect_codex(
         _stop_process(server)
 
 
+def collect_opencode(
+    case_id: str,
+    out_dir: Path,
+    model: str,
+    timeout: float,
+    pack_version: str = "v2",
+    condition: str = "plain_mcp_baseline",
+) -> int:
+    """Run one sandboxed OpenCode case. Tests use the builders and parser; they do not call this."""
+    if pack_version != "v2":
+        print("opencode collection requires the frozen v2 pack", file=sys.stderr)
+        return 2
+    if condition not in {"plain_mcp_baseline", "adapter_enabled"}:
+        print(f"unsupported condition {condition}", file=sys.stderr)
+        return 2
+    freeze = verify_freeze(version=pack_version)
+    if not freeze["ok"]:
+        print(json.dumps({"ok": False, "problems": ["freeze mismatch"]}, indent=2))
+        return 1
+    pack = load_pack(version=pack_version)
+    case = next((item for item in pack["cases"] if item["id"] == case_id), None)
+    if case is None:
+        print(f"unknown case {case_id}", file=sys.stderr)
+        return 2
+    opencode_bin = Path(shutil.which("opencode") or "").resolve()
+    if not opencode_bin.is_file() or opencode_bin.parent.resolve() == Path("/"):
+        print("opencode binary is unavailable", file=sys.stderr)
+        return 1
+    out_dir.mkdir(parents=True, exist_ok=True)
+    layout = prepare_collector_layout(
+        store_root=Path.home() / ".cache",
+        client_root=Path.home() / ".local" / "share",
+        workspace_root=Path("/tmp"),
+    )
+    fixture_repo = layout["fixture_repo"]
+    store_home = layout["store_home"]
+    client_home = layout["codex_home"]
+    materialize_fixture(case, fixture_repo)
+    store_home.chmod(0o700)
+    client_home.chmod(0o700)
+    (out_dir / "layout.json").write_text(
+        json.dumps({key: str(value) for key, value in layout.items()}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    installed = install_isolated_opencode(fixture_repo, client_home, mcp_url=PLAN_LOOPBACK_MCP_URL)
+    git_commit_fixture(fixture_repo)
+    bind_fixture_namespace(case, fixture_repo, store_home)
+    server: subprocess.Popen[str] | None = None
+    try:
+        headers = None
+        mcp_url = PLAN_LOOPBACK_MCP_URL
+        secrets: list[str] = []
+        if case["fixture"]["amb_mode"] == "available":
+            bridge_python = _bridge_python()
+            server, mcp_url, token_source = _start_fixture_http(store_home, bridge_python)
+            token = token_source.read_text(encoding="utf-8").strip()
+            secrets.append(token)
+            headers = {"Authorization": f"Bearer {token}"}
+        config_text = render_opencode_remote_config(url=mcp_url, headers=headers)
+        if (
+            str(store_home) in config_text
+            or "fixture-store.sqlite" in config_text
+            or "AGENT_MEMORY_BRIDGE_HOME" in config_text
+        ):
+            print("collector config exposes the fixture store", file=sys.stderr)
+            return 1
+        installed["client_config_path"].write_text(config_text, encoding="utf-8")
+        bwrap = _require_bwrap()
+        venv = _bridge_python().parent.parent
+        ro_binds = [(opencode_bin.parent, str(opencode_bin.parent))]
+        if condition == "adapter_enabled":
+            ro_binds.append((venv, str(venv)))
+        protected = [ROOT, Path.home() / ".codex", Path.home() / ".cache", Path("/tmp")]
+        exec_argv = build_opencode_exec_argv(
+            fixture_repo=fixture_repo,
+            model=model,
+            prompt=str(case["prompt"]),
+            opencode_bin=str(opencode_bin),
+        )
+        isolated = build_opencode_sandbox_argv(
+            bwrap=bwrap,
+            condition=condition,
+            store_home=store_home,
+            client_home=client_home,
+            workspace_parent=layout["workspace_parent"],
+            source_root=ROOT / "src",
+            command=exec_argv,
+            ro_binds=ro_binds,
+            protected_paths=protected,
+        )
+        markers = memory_only_markers(case)
+        scan_roots = [opencode_bin.parent, fixture_repo, client_home]
+        absent = [ROOT, Path.home() / ".codex", Path.home() / ".cache"]
+        if condition == "adapter_enabled":
+            scan_roots.append(ROOT / "src")
+        else:
+            absent.extend([store_home, Path(OPENCODE_STORE_MOUNT)])
+        try:
+            probe = _probe_isolation(
+                bwrap=bwrap,
+                ro_binds=[(source, Path(dest)) for source, dest in ro_binds],
+                rw_binds=_opencode_probe_rw_binds(layout, store_home, condition),
+                protected=protected if condition == "adapter_enabled" else [*protected, store_home],
+                markers=markers,
+                scan_roots=scan_roots,
+                absent=absent,
+            )
+        except (RuntimeError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
+            print(
+                json.dumps({"ok": False, "status": "ISOLATION_PREFLIGHT_FAILED", "reason": str(exc)[:400]}),
+                file=sys.stderr,
+            )
+            return 1
+        preflight_ok = not probe["visible"] and not probe["hits"] and probe["nested"]["ok"]
+        (out_dir / "preflight.json").write_text(
+            json.dumps({"ok": preflight_ok, "visible": probe["visible"], "hit_count": len(probe["hits"])}, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+        if not preflight_ok:
+            print(
+                json.dumps({"ok": False, "status": "ISOLATION_PREFLIGHT_FAILED", "hit_count": len(probe["hits"])}),
+                file=sys.stderr,
+            )
+            return 1
+        env = {
+            "PATH": f"{opencode_bin.parent}:/usr/bin:/bin",
+            "HOME": str(client_home),
+            "TMPDIR": "/tmp",
+            "LANG": os.environ.get("LANG", "C.UTF-8"),
+            "LC_ALL": os.environ.get("LC_ALL", "C.UTF-8"),
+            **installed["process_env"],
+        }
+        if os.environ.get("OPENAI_API_KEY"):
+            env["OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
+            secrets.append(os.environ["OPENAI_API_KEY"])
+        if condition == "adapter_enabled":
+            env["AMB_LIFECYCLE_HOOK_COMMAND"] = json.dumps(
+                render_opencode_hook_command(str(_bridge_python()), installed["wrapper_path"])
+            )
+        env_blob = json.dumps(env)
+        if str(store_home) in env_blob or "fixture-store.sqlite" in env_blob or "AGENT_MEMORY_BRIDGE_HOME" in env_blob:
+            print("collector environment exposes the fixture store", file=sys.stderr)
+            return 1
+        started = time.perf_counter()
+        try:
+            completed = subprocess.run(
+                isolated,
+                cwd=fixture_repo,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
+            stdout, stderr, returncode = completed.stdout, completed.stderr, completed.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            stderr = f"{stderr}\ncollector timeout\n"
+            returncode = None
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
+        (out_dir / "opencode.jsonl").write_text(_redact(stdout, secrets), encoding="utf-8")
+        (out_dir / "stderr.txt").write_text(_redact(stderr, secrets), encoding="utf-8")
+        parsed = parse_opencode_run_json(_redact(stdout, secrets), interesting_paths=list(case["fixture"]["files"]))
+        observation = _redact_obj(
+            assemble_opencode_observation(
+                case=case,
+                pack_version=pack_version,
+                condition=condition,
+                model=model,
+                version=_command_version([str(opencode_bin), "--version"]),
+                parsed=parsed,
+                store_home=store_home,
+                returncode=returncode,
+                elapsed_ms=elapsed_ms,
+                freeze=freeze,
+                adapter=_adapter_observation(store_home) if condition == "adapter_enabled" else {"loaded": False},
+                adapter_evidence=_adapter_evidence(store_home) if condition == "adapter_enabled" else [],
+            ),
+            secrets,
+        )
+        report = write_scored_observation(out_dir, pack, observation, freeze)
+        print(render_text(report), end="")
+        if returncode is None:
+            return 1
+        return 0 if returncode == 0 or observation["trace_complete"] else returncode
+    finally:
+        _stop_process(server)
+
+
+def _opencode_probe_rw_binds(layout: dict[str, Path], store_home: Path, condition: str) -> list[tuple[Path, Path]]:
+    binds = [
+        (layout["codex_home"], layout["codex_home"]),
+        (layout["workspace_parent"], layout["workspace_parent"]),
+    ]
+    if condition == "adapter_enabled":
+        binds.append((store_home, Path(OPENCODE_STORE_MOUNT)))
+    return binds
+
+
 def _install_adapter_hook(
     *,
     codex_home: Path,
@@ -745,6 +958,17 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument("--out", type=Path, required=True)
     collect.add_argument("--model", default="grok-4.7-build-fast")
     collect.add_argument("--timeout", type=float, default=240)
+    opencode = subparsers.add_parser("collect-opencode", help="Run one isolated OpenCode case and score its trace.")
+    opencode.add_argument("--case-id", default="known-project-gotcha")
+    opencode.add_argument("--pack", choices=("v2",), default="v2")
+    opencode.add_argument(
+        "--condition",
+        choices=("plain_mcp_baseline", "adapter_enabled"),
+        default="plain_mcp_baseline",
+    )
+    opencode.add_argument("--out", type=Path, required=True)
+    opencode.add_argument("--model", default="grok-4.7-build-fast")
+    opencode.add_argument("--timeout", type=float, default=240)
     return parser
 
 

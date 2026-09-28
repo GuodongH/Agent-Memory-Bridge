@@ -11,15 +11,14 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from tools.evidence.lifecycle_activation_grade import (
+    AMB_TOOL_NAMES,
     OBSERVATION_SCHEMA,
     REQUIRED_CASE_IDS,
     host_lanes,  # noqa: F401
@@ -34,6 +33,9 @@ RUBRIC_PATH = ROOT / "benchmark" / "lifecycle-activation-v1.md"
 FREEZE_PATH = ROOT / "benchmark" / "lifecycle-activation-v1.sha256"
 
 PACK_SCHEMA = "amb.lifecycle-activation-benchmark.v1"
+OPENCODE_STORE_MOUNT = "/opt/amb-lifecycle-store"
+OPENCODE_SOURCE_MOUNT = "/opt/amb-lifecycle-src"
+PLAN_LOOPBACK_MCP_URL = "http://127.0.0.1:9/mcp"
 INDIRECT_FORBIDDEN_WORDS = re.compile(r"\b(?:memory|remember|recall|amb)\b", re.IGNORECASE)
 PROBE_EXPECTATIONS = {
     "adequate_good": "PASS",
@@ -161,22 +163,57 @@ def check_pack(root: Path | None = None) -> dict[str, Any]:
             command = prepared["command"]
             plugin_text = prepared["plugin_path"].read_text(encoding="utf-8")
             config_text = prepared["client_config_path"].read_text(encoding="utf-8")
+            wrapper_text = prepared["wrapper_path"].read_text(encoding="utf-8")
+            store = str(prepared["bridge_home"])
+            plain_tail = _argv_tail(prepared["plain_sandbox_argv"])
+            adapter_tail = _argv_tail(prepared["adapter_sandbox_argv"])
+            plain_argv = "\n".join(prepared["plain_sandbox_argv"])
+            adapter_argv = "\n".join(prepared["adapter_sandbox_argv"])
+            env_text = json.dumps(prepared["process_env"])
             if (
-                "<" in command
-                or ">" in command
-                or "opencode run" not in command
+                "collect-opencode" not in command
                 or "--pure" in command.split()
+                or store in command
+                or "fixture-store.sqlite" in command
+                or "AGENT_MEMORY_BRIDGE_HOME" in command
                 or "192.168." in command
                 or ":58080" in command
+                or "opencode run" in command
                 or "session.created" not in plugin_text
                 or "experimental.session.compacting" not in plugin_text
                 or "lifecycle-hook" not in plugin_text
-                or "AGENT_MEMORY_BRIDGE_HOME" not in config_text
+                or "AGENT_MEMORY_BRIDGE_HOME" in config_text
+                or store in config_text
+                or "fixture-store.sqlite" in config_text
                 or "192.168." in config_text
                 or "58080" in config_text
-                or "AGENT_MEMORY_BRIDGE_REMOTE_URL" in config_text
+                or '"type": "remote"' not in config_text
+                or "http://127.0.0.1:" not in config_text
+                or "/mcp" not in config_text
+                or '"oauth": false' not in config_text
+                or OPENCODE_STORE_MOUNT not in wrapper_text
+                or store in wrapper_text
+                or "fixture-store.sqlite" in wrapper_text
+                or prepared["wrapper_path"].is_relative_to(prepared["fixture_repo"])
+                or "AGENT_MEMORY_BRIDGE_HOME" in env_text
+                or store in env_text
+                or "fixture-store.sqlite" in env_text
+                or store in plain_tail
+                or "AGENT_MEMORY_BRIDGE_HOME" in plain_tail
+                or "fixture-store.sqlite" in plain_tail
+                or "--pure" in plain_tail.split()
+                or "opencode" not in plain_tail.split()
+                or "run" not in plain_tail.split()
+                or store in adapter_tail
+                or "AGENT_MEMORY_BRIDGE_HOME" in adapter_tail
+                or "fixture-store.sqlite" in adapter_tail
+                or OPENCODE_STORE_MOUNT not in adapter_argv
+                or store not in adapter_argv
+                or OPENCODE_STORE_MOUNT in plain_argv
+                or store in plain_argv
                 or not prepared["fixture_repo"].joinpath(".git").exists()
                 or prepared["bound_repository_id"] != prepared["repository_id"]
+                or prepared["bridge_home"].parent == prepared["fixture_repo"].parent
             ):
                 problems.append("opencode plan is not an isolated runnable path")
     else:
@@ -444,8 +481,8 @@ def find_bwrap() -> Path | None:
 def build_allowlisted_filesystem_argv(
     *,
     bwrap: Path,
-    ro_binds: list[tuple[Path, Path]],
-    rw_binds: list[tuple[Path, Path]],
+    ro_binds: list[tuple[Path, Path | str]],
+    rw_binds: list[tuple[Path, Path | str]],
     command: list[str],
     protected_paths: list[Path] | None = None,
 ) -> list[str]:
@@ -544,81 +581,174 @@ def prepare_collector_layout(*, store_root: Path, client_root: Path, workspace_r
     }
 
 
-def render_opencode_command(
-    *,
-    fixture_repo: Path,
-    bridge_home: Path,
-    prompt_path: Path,
-    source_root: Path,
-    model: str,
-    config_home: Path,
-    data_home: Path,
-    state_home: Path,
-    cache_home: Path,
-    opencode_home: Path,
-) -> str:
-    """Concrete OpenCode command. Placeholders are rejected by check.
+def _argv_tail(argv: list[str]) -> str:
+    if "--" not in argv:
+        return ""
+    return "\n".join(argv[argv.index("--") + 1 :])
 
-    ``--pure`` disables external plugins, including the lifecycle plugin, so it
-    is not part of this command. The XDG homes keep the user's OpenCode config
-    out of the run.
-    """
-    command = " ".join(
-        [
-            "env",
-            f"AGENT_MEMORY_BRIDGE_HOME={shlex.quote(str(bridge_home))}",
-            f"PYTHONPATH={shlex.quote(str(source_root))}",
-            f"XDG_CONFIG_HOME={shlex.quote(str(config_home))}",
-            f"XDG_DATA_HOME={shlex.quote(str(data_home))}",
-            f"XDG_STATE_HOME={shlex.quote(str(state_home))}",
-            f"XDG_CACHE_HOME={shlex.quote(str(cache_home))}",
-            f"OPENCODE_TEST_HOME={shlex.quote(str(opencode_home))}",
-            "opencode",
-            "run",
-            "--format",
-            "json",
-            "--dir",
-            shlex.quote(str(fixture_repo)),
-            "--model",
-            shlex.quote(model),
-            "--",
-            f"$(cat {shlex.quote(str(prompt_path))})",
-        ]
+
+def _reject_store_exposure(text: str, message: str) -> None:
+    if any(marker in text for marker in ("AGENT_MEMORY_BRIDGE_HOME", "fixture-store.sqlite", "192.168.", ":58080")):
+        raise RuntimeError(message)
+
+
+def render_opencode_public_command(*, case_id: str, pack: str = "v2", condition: str = "plain_mcp_baseline") -> str:
+    """Operator command. It does not carry the fixture store into the model process."""
+    if condition not in {"plain_mcp_baseline", "adapter_enabled"}:
+        raise ValueError(f"unsupported collector condition {condition}")
+    command = (
+        "python ./scripts/run_lifecycle_activation_benchmark.py collect-opencode "
+        f"--case-id {case_id} --pack {pack} --condition {condition}"
     )
-    if "<" in command or ">" in command or "--pure" in command.split() or "192.168." in command or ":58080" in command:
-        raise RuntimeError("opencode command contains a placeholder, --pure, or a production route")
+    _reject_store_exposure(command, "opencode collector command exposes the fixture store or production AMB")
+    if "--pure" in command.split():
+        raise RuntimeError("opencode collector command disables the lifecycle plugin")
     return command
 
 
-def install_isolated_opencode(checkout: Path, bridge_home: Path, destination: Path) -> dict[str, Path]:
-    """Install the repo lifecycle plugin and a local MCP config outside the user profile."""
+def render_opencode_remote_config(*, url: str, headers: dict[str, str] | None = None) -> str:
+    """OpenCode 1.18 remote MCP stanza. The model reaches AMB through loopback, not the SQLite file."""
+    if not url.startswith("http://127.0.0.1:") or not url.endswith("/mcp"):
+        raise RuntimeError("OpenCode MCP URL must be a loopback /mcp endpoint")
+    server: dict[str, Any] = {"type": "remote", "url": url, "enabled": True, "oauth": False}
+    if headers:
+        server["headers"] = dict(headers)
+    rendered = json.dumps({"mcp": {"agentMemoryBridge": server}}, indent=2) + "\n"
+    _reject_store_exposure(rendered, "OpenCode MCP config exposes the fixture store or production AMB")
+    return rendered
+
+
+def render_opencode_hook_wrapper() -> str:
+    """Sandbox-side hook. It can see only the fixed mount, never the host bridge path."""
+    store = OPENCODE_STORE_MOUNT
+    source = OPENCODE_SOURCE_MOUNT
+    lines = [
+        "import json, os, subprocess, sys",
+        "payload = sys.stdin.read()",
+        "env = os.environ.copy()",
+        f"env['PYTHONPATH'] = {source!r}",
+        f"env['AGENT_MEMORY_BRIDGE_HOME'] = {store!r}",
+        f"env['AGENT_MEMORY_BRIDGE_CONFIG'] = {f'{store}/config.toml'!r}",
+        "env.pop('AGENT_MEMORY_BRIDGE_AUTHORITY_URL', None)",
+        "completed = subprocess.run(",
+        "    [sys.executable, '-m', 'agent_mem_bridge', 'lifecycle-hook'],",
+        "    input=payload,",
+        "    text=True,",
+        "    capture_output=True,",
+        "    env=env,",
+        ")",
+        f"log = os.path.join({store!r}, 'lifecycle', 'hook-responses.jsonl')",
+        "os.makedirs(os.path.dirname(log), exist_ok=True)",
+        "with open(log, 'a', encoding='utf-8') as handle:",
+        "    handle.write(json.dumps({'returncode': completed.returncode, 'stdout': completed.stdout}) + '\\n')",
+        "sys.stdout.write(completed.stdout)",
+        "raise SystemExit(completed.returncode)",
+        "",
+    ]
+    rendered = "\n".join(lines)
+    if "fixture-store.sqlite" in rendered or "192.168." in rendered or ":58080" in rendered:
+        raise RuntimeError("hook wrapper names the fixture database or production AMB")
+    return rendered
+
+
+def render_opencode_hook_command(python_path: str, wrapper_path: Path) -> list[str]:
+    command = [python_path, str(wrapper_path)]
+    _reject_store_exposure("\n".join(command), "hook command exposes the fixture store or production AMB")
+    return command
+
+
+def build_opencode_exec_argv(
+    *,
+    fixture_repo: Path,
+    model: str,
+    prompt: str,
+    opencode_bin: str = "opencode",
+) -> list[str]:
+    """Argv that runs inside the sandbox, after bwrap's ``--``."""
+    argv = [
+        opencode_bin,
+        "run",
+        "--format",
+        "json",
+        "--auto",
+        "--dir",
+        str(fixture_repo),
+        "--model",
+        model,
+        "--",
+        prompt,
+    ]
+    if "--pure" in argv:
+        raise RuntimeError("opencode exec argv disables the lifecycle plugin")
+    _reject_store_exposure("\n".join(argv), "opencode exec argv exposes the fixture store or production AMB")
+    return argv
+
+
+def build_opencode_sandbox_argv(
+    *,
+    bwrap: Path,
+    condition: str,
+    store_home: Path,
+    client_home: Path,
+    workspace_parent: Path,
+    source_root: Path,
+    command: list[str],
+    ro_binds: list[tuple[Path, str]] | None = None,
+    rw_binds: list[tuple[Path, str]] | None = None,
+    protected_paths: list[Path] | None = None,
+) -> list[str]:
+    """Plain MCP does not mount the store. Adapter mode mounts it only at the fixed sandbox path."""
+    if condition not in {"plain_mcp_baseline", "adapter_enabled"}:
+        raise ValueError(f"unsupported collector condition {condition}")
+    ro: list[tuple[Path, str]] = list(ro_binds or [])
+    rw: list[tuple[Path, str]] = [
+        *list(rw_binds or []),
+        (client_home, str(client_home)),
+        (workspace_parent, str(workspace_parent)),
+    ]
+    protected = list(protected_paths or [])
+    if condition == "adapter_enabled":
+        rw.append((store_home, OPENCODE_STORE_MOUNT))
+        ro.append((source_root, OPENCODE_SOURCE_MOUNT))
+    else:
+        protected.append(store_home)
+    argv = build_allowlisted_filesystem_argv(
+        bwrap=bwrap,
+        ro_binds=ro,
+        rw_binds=rw,
+        command=command,
+        protected_paths=protected,
+    )
+    tail = _argv_tail(argv)
+    _reject_store_exposure(tail, "opencode sandbox command exposes the fixture store or production AMB")
+    if str(store_home) in tail:
+        raise RuntimeError("opencode sandbox command contains the host store path")
+    rendered = "\n".join(argv)
+    if condition == "plain_mcp_baseline" and (OPENCODE_STORE_MOUNT in rendered or str(store_home) in rendered):
+        raise RuntimeError("plain OpenCode sandbox mounts the fixture store")
+    return argv
+
+
+def install_isolated_opencode(checkout: Path, client_home: Path, *, mcp_url: str) -> dict[str, Any]:
+    """Copy the repo plugin into the checkout and keep the store path out of opencode.json."""
     plugin_source = ROOT / "adapters" / "opencode" / "amb-lifecycle.js"
     plugin_path = checkout / ".opencode" / "plugins" / plugin_source.name
     plugin_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(plugin_source, plugin_path)
     homes = {
-        "config_home": destination / "xdg-config",
-        "data_home": destination / "xdg-data",
-        "state_home": destination / "xdg-state",
-        "cache_home": destination / "xdg-cache",
-        "opencode_home": destination / "opencode-home",
+        "config_home": client_home / "xdg-config",
+        "data_home": client_home / "xdg-data",
+        "state_home": client_home / "xdg-state",
+        "cache_home": client_home / "xdg-cache",
+        "opencode_home": client_home / "opencode-home",
     }
     for path in homes.values():
         path.mkdir(parents=True, exist_ok=True)
-    from agent_mem_bridge.client_config import build_client_config_options, render_client_config
-
-    rendered = render_client_config(
-        build_client_config_options(
-            "opencode",
-            python_path=sys.executable,
-            cwd=checkout,
-            bridge_home=bridge_home,
-            config_path=bridge_home / "config.toml",
-        )
-    ).content
-    forbidden = ("192.168.", "58080", "AGENT_MEMORY_BRIDGE_REMOTE_URL", "http-token", "Bearer ")
-    if any(marker in rendered for marker in forbidden):
-        raise RuntimeError("isolated OpenCode config includes a production route")
+    wrapper_path = client_home / "amb-lifecycle-wrapper.py"
+    wrapper_path.write_text(render_opencode_hook_wrapper(), encoding="utf-8")
+    if wrapper_path.resolve().is_relative_to(checkout.resolve()):
+        raise RuntimeError("OpenCode hook wrapper is inside the checkout")
+    rendered = render_opencode_remote_config(url=mcp_url)
     plugin_text = plugin_path.read_text(encoding="utf-8")
     if (
         "session.created" not in plugin_text
@@ -627,8 +757,22 @@ def install_isolated_opencode(checkout: Path, bridge_home: Path, destination: Pa
     ):
         raise RuntimeError("OpenCode lifecycle plugin is missing a supported entrypoint")
     config_path = checkout / "opencode.json"
-    config_path.write_text(rendered if rendered.endswith("\n") else rendered + "\n", encoding="utf-8")
-    return {**homes, "plugin_path": plugin_path, "client_config_path": config_path}
+    config_path.write_text(rendered, encoding="utf-8")
+    process_env = {
+        "XDG_CONFIG_HOME": str(homes["config_home"]),
+        "XDG_DATA_HOME": str(homes["data_home"]),
+        "XDG_STATE_HOME": str(homes["state_home"]),
+        "XDG_CACHE_HOME": str(homes["cache_home"]),
+        "OPENCODE_TEST_HOME": str(homes["opencode_home"]),
+    }
+    _reject_store_exposure(json.dumps(process_env), "OpenCode process env exposes the fixture store")
+    return {
+        **homes,
+        "plugin_path": plugin_path,
+        "client_config_path": config_path,
+        "wrapper_path": wrapper_path,
+        "process_env": process_env,
+    }
 
 
 def git_commit_fixture(checkout: Path) -> None:
@@ -706,37 +850,52 @@ def prepare_governed_fixture(
         raise ValueError(f"unsupported prepare host {host}")
     destination = dest.resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    checkout = destination / "checkout"
-    bridge_home = destination / "bridge"
+    layout = prepare_collector_layout(
+        store_root=destination / "store-root",
+        client_root=destination / "client-root",
+        workspace_root=destination / "workspace-root",
+    )
+    checkout = layout["fixture_repo"]
+    bridge_home = layout["store_home"]
+    client_home = layout["codex_home"]
     materialize_fixture(case, checkout)
-    installed = install_isolated_opencode(checkout, bridge_home, destination)
+    # The discarded port is only an offline plan. collect-opencode rewrites the URL before launch.
+    installed = install_isolated_opencode(checkout, client_home, mcp_url=PLAN_LOOPBACK_MCP_URL)
     git_commit_fixture(checkout)
     repository_id = bind_fixture_namespace(case, checkout, bridge_home)
+    prompt = str(case["prompt"])
     prompt_path = destination / "prompt.txt"
-    prompt_path.write_text(str(case["prompt"]), encoding="utf-8")
-    command = render_opencode_command(
-        fixture_repo=checkout,
-        bridge_home=bridge_home,
-        prompt_path=prompt_path,
-        source_root=(source_root or (ROOT / "src")).resolve(),
-        model=model,
-        config_home=installed["config_home"],
-        data_home=installed["data_home"],
-        state_home=installed["state_home"],
-        cache_home=installed["cache_home"],
-        opencode_home=installed["opencode_home"],
-    )
+    prompt_path.write_text(prompt, encoding="utf-8")
+    command = render_opencode_public_command(case_id=str(case["id"]))
+    exec_argv = build_opencode_exec_argv(fixture_repo=checkout, model=model, prompt=prompt)
+    sandbox = {
+        "bwrap": destination / "bwrap-plan",
+        "store_home": bridge_home,
+        "client_home": client_home,
+        "workspace_parent": layout["workspace_parent"],
+        "source_root": (source_root or (ROOT / "src")).resolve(),
+        "command": exec_argv,
+    }
+    plain_argv = build_opencode_sandbox_argv(condition="plain_mcp_baseline", **sandbox)
+    adapter_argv = build_opencode_sandbox_argv(condition="adapter_enabled", **sandbox)
     (destination / "command.txt").write_text(command + "\n", encoding="utf-8")
     return {
         "command": command,
         "fixture_repo": checkout,
         "bridge_home": bridge_home,
+        "client_home": client_home,
         "repository_id": repository_id,
         "bound_repository_id": repository_id,
         "prompt_path": prompt_path,
         "plugin_path": installed["plugin_path"],
         "client_config_path": installed["client_config_path"],
         "config_home": installed["config_home"],
+        "wrapper_path": installed["wrapper_path"],
+        "process_env": installed["process_env"],
+        "hook_command": render_opencode_hook_command("/usr/bin/python3", installed["wrapper_path"]),
+        "exec_argv": exec_argv,
+        "plain_sandbox_argv": plain_argv,
+        "adapter_sandbox_argv": adapter_argv,
     }
 
 
@@ -748,10 +907,7 @@ def render_host_plan(pack: dict[str, Any], host: str, case_id: str) -> str:
             f"--case-id {case['id']} --pack v1 --condition plain_mcp_baseline"
         )
     elif host == "opencode":
-        command = (
-            "python ./scripts/run_lifecycle_activation_benchmark.py prepare-host "
-            f"--host opencode --case-id {case['id']} --pack v2"
-        )
+        command = render_opencode_public_command(case_id=str(case["id"]), pack="v2")
     else:
         raise ValueError(f"unsupported host {host}")
     return "\n".join(
@@ -821,6 +977,173 @@ def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None
         "output_tokens": usage.get("output_tokens"),
         "terminal_event": terminal_event,
     }
+
+
+def parse_opencode_run_json(text: str, interesting_paths: list[str] | None = None) -> dict[str, Any]:
+    """Normalize `opencode run --format json` JSONL without launching OpenCode.
+
+    `turn.completed` is reserved for a non-error trace that stopped with text.
+    A missing step_finish stays incomplete.
+    """
+    tool_calls: list[dict[str, Any]] = []
+    final_parts: list[str] = []
+    repo_paths: list[str] = []
+    commands: list[dict[str, str]] = []
+    events = 0
+    saw_error = False
+    step_reason = None
+    last_type = None
+    input_tokens = None
+    output_tokens = None
+    interesting = interesting_paths or []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        events += 1
+        event_type = event.get("type")
+        if isinstance(event_type, str):
+            last_type = event_type
+        if event_type == "error":
+            saw_error = True
+            continue
+        part = event.get("part") if isinstance(event.get("part"), dict) else {}
+        if event_type == "text":
+            message = part.get("text") if isinstance(part.get("text"), str) else event.get("text")
+            if isinstance(message, str) and message.strip():
+                final_parts.append(message)
+            continue
+        if event_type == "step_finish":
+            reason = part.get("reason") if isinstance(part.get("reason"), str) else event.get("reason")
+            if isinstance(reason, str):
+                step_reason = reason
+            tokens = part.get("tokens") if isinstance(part.get("tokens"), dict) else {}
+            if isinstance(tokens.get("input"), int):
+                input_tokens = tokens["input"]
+            if isinstance(tokens.get("output"), int):
+                output_tokens = tokens["output"]
+            continue
+        if event_type != "tool_use":
+            continue
+        state = part.get("state") if isinstance(part.get("state"), dict) else {}
+        status = str(state.get("status") or "completed")
+        if status not in {"completed", "error"}:
+            continue
+        tool_input = state.get("input") if isinstance(state.get("input"), dict) else {}
+        raw_tool = str(part.get("tool") or "")
+        output = state.get("output")
+        output_text = output if isinstance(output, str) else _extract_text(output)
+        if raw_tool in {"bash", "shell"}:
+            commands.append({"command": str(tool_input.get("command") or ""), "output": output_text})
+            continue
+        if raw_tool == "read":
+            file_path = tool_input.get("filePath") or tool_input.get("path") or tool_input.get("file") or ""
+            if isinstance(file_path, str):
+                repo_paths.extend(_match_interesting(file_path, interesting))
+            continue
+        tool_name = _normalize_opencode_tool_name(raw_tool)
+        if tool_name not in AMB_TOOL_NAMES:
+            continue
+        tool_calls.append(
+            {
+                "tool": tool_name,
+                "namespace": str(tool_input.get("namespace") or ""),
+                "is_error": status == "error" or bool(state.get("error")),
+                "result_text": output_text,
+                "result_count": tool_input.get("result_count"),
+                "elapsed_ms": state.get("elapsed_ms"),
+            }
+        )
+    final_text = "\n".join(final_parts)
+    completed = not saw_error and step_reason == "stop" and bool(final_text.strip())
+    return {
+        "event_count": events,
+        "tool_calls": tool_calls,
+        "commands": commands,
+        "final_text": final_text,
+        "repo_paths_read": list(dict.fromkeys(repo_paths)),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "terminal_event": "turn.completed" if completed else last_type,
+    }
+
+
+def _normalize_opencode_tool_name(name: str) -> str:
+    cleaned = name.strip()
+    if cleaned in AMB_TOOL_NAMES:
+        return cleaned
+    for tool in AMB_TOOL_NAMES:
+        if cleaned.endswith(f"_{tool}") or cleaned.endswith(f".{tool}"):
+            return tool
+    return cleaned
+
+
+def assemble_opencode_observation(
+    *,
+    case: dict[str, Any],
+    pack_version: str,
+    condition: str,
+    model: str,
+    version: str,
+    parsed: dict[str, Any],
+    store_home: Path,
+    returncode: int | None,
+    elapsed_ms: float,
+    freeze: dict[str, Any],
+    adapter: dict[str, Any] | None = None,
+    adapter_evidence: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build one live observation. Direct reads of the host store or fixed mount are leaks."""
+    final_text = str(parsed.get("final_text") or "")
+    terminal = parsed.get("terminal_event")
+    access = assess_fixture_access(
+        list(parsed.get("commands") or []),
+        markers=memory_only_markers(case),
+        hidden_paths=[str(store_home), OPENCODE_STORE_MOUNT, "fixture-store.sqlite"],
+    )
+    return {
+        "schema": OBSERVATION_SCHEMA,
+        "case_id": case["id"],
+        "trace_complete": returncode == 0 and terminal == "turn.completed" and bool(final_text.strip()),
+        "terminal_event": terminal,
+        "execution_kind": "live",
+        "condition": condition,
+        "pack": pack_version,
+        "host": {"id": "opencode", "version": version, "model": model},
+        "amb_available": case["fixture"]["amb_mode"] == "available",
+        "namespace_bound": case.get("expected_namespace"),
+        "tool_calls": list(parsed.get("tool_calls") or []),
+        "final_text": final_text,
+        "repo_paths_read": list(parsed.get("repo_paths_read") or []),
+        "fixture_access": access,
+        "latency_ms": elapsed_ms,
+        "input_tokens": parsed.get("input_tokens"),
+        "output_tokens": parsed.get("output_tokens"),
+        "collector_exit_code": returncode,
+        "freeze_sha256": dict(freeze.get("actual") or {}),
+        "scorer_sha256": scorer_sha256(),
+        "adapter": adapter or {"loaded": False},
+        "adapter_evidence": list(adapter_evidence or []),
+    }
+
+
+def write_scored_observation(
+    out_dir: Path,
+    pack: dict[str, Any],
+    observation: dict[str, Any],
+    freeze: dict[str, Any],
+) -> dict[str, Any]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "observation.json").write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
+    report = score_pack(pack, [observation], freeze=freeze)
+    (out_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return report
 
 
 def _validate_case(case: dict[str, Any]) -> list[str]:
