@@ -194,6 +194,7 @@ Do not treat these as authoritative by themselves:
 - generated summaries without record identifiers
 - exported Markdown after the database has changed
 - stale benchmark snapshots
+- lifecycle activation evidence and hook-injected context
 
 These artifacts can help explain or audit behavior, but they do not replace the
 stored records and reviewed project documentation.

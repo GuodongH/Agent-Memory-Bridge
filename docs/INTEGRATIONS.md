@@ -457,6 +457,43 @@ intended user or project config:
 }
 ```
 
+## Optional host lifecycle activation
+
+Status: `adapter contract tested; live host trial not claimed`
+
+AMB remains usable as a plain MCP server without this adapter. The optional
+lifecycle adapter is a host hook around the same recall behavior. It is not
+installed by pasting instructions into a project instruction file, and loading
+that file is not proof that activation ran.
+
+The shared entrypoint reads one JSON event on standard input:
+
+```bash
+python3 -m agent_mem_bridge lifecycle-hook
+```
+
+On Windows, use `py -3 -m agent_mem_bridge lifecycle-hook`.
+Use the same interpreter that has the package installed, and replace `python3`
+or `py -3` in the hook command when the default interpreter does not.
+
+Codex can call that entrypoint from `adapters/codex/hooks/hooks.json` on session
+start, prompt submission, and compaction. Review and trust the hook before
+Codex runs it. Session start resolves the bound project and does not dump
+memory. A material task may recall once. A typo, a merely optional design
+alternative, or the same already-answered need does not recall again.
+
+The OpenCode plugin at `adapters/opencode/amb-lifecycle.js` uses the same
+entrypoint for session start and compaction. Prompt-level activation on that
+host is a pending lane until it has a prompt hook that is not per-token. Do
+not bind a message-updated event for this purpose.
+
+The adapter reads project scope through the governed project resolver. It does
+not create a namespace, rebind a project, or accept a caller-supplied namespace
+as authority. It does not add an MCP tool, write durable memory, or store
+prompts, transcripts, or hidden reasoning. Activation evidence is a derived
+local decision log. A live host session is not claimed by these repository
+checks.
+
 ## Hermes
 
 Status: `Locally tested`

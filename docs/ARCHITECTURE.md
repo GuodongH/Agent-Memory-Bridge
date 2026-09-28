@@ -4,6 +4,10 @@ Agent Memory Bridge (AMB) is a **local-first, governed engineering-memory bridge
 
 > **Authority rule:** a useful rendering, receipt, report, or historical announcement does not become runtime authority merely because it exists. Durable records and their explicit contracts remain the source of truth.
 
+## Optional lifecycle adapter
+
+A host may optionally run `lifecycle-hook` at session start, task submission, or compaction. The hook resolves the checkout through the governed project resolver and can make one targeted recall. Its evidence log and injected context are derived or transient. They are not durable memory, a scheduler, or a second authority. Plain MCP use does not load this adapter.
+
 ## The System in One View
 
 ```mermaid
