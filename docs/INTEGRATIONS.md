@@ -478,21 +478,33 @@ or `py -3` in the hook command when the default interpreter does not.
 
 Codex can call that entrypoint from `adapters/codex/hooks/hooks.json` on session
 start, prompt submission, and compaction. Review and trust the hook before
-Codex runs it. Session start resolves the bound project and does not dump
-memory. A material task may recall once. A typo, a merely optional design
-alternative, or the same already-answered need does not recall again.
+Codex runs it. The Codex command timeout is 10 seconds. Session start resolves
+the bound project and does not dump memory. A material task may recall once.
+A typo or a merely optional design alternative does not. An exact repeat of
+that same prompt does not recall again. A reworded question can still recall;
+this adapter does not yet judge that two prompts are the same material need.
 
 The OpenCode plugin at `adapters/opencode/amb-lifecycle.js` uses the same
-entrypoint for session start and compaction. Prompt-level activation on that
-host is a pending lane until it has a prompt hook that is not per-token. Do
-not bind a message-updated event for this purpose.
+entrypoint for session start and compaction. `session.created` reads
+`properties.info.id`. The plugin kills the child if it is still running after
+10 seconds and then continues without injected context. Prompt-level activation
+on that host is a pending lane until it has a prompt hook that is not per-token.
+Do not bind a message-updated event for this purpose.
 
 The adapter reads project scope through the governed project resolver. It does
 not create a namespace, rebind a project, or accept a caller-supplied namespace
 as authority. It does not add an MCP tool, write durable memory, or store
 prompts, transcripts, or hidden reasoning. Activation evidence is a derived
-local decision log. A live host session is not claimed by these repository
-checks.
+local decision log.
+
+Recall in this version opens a local SQLite file only. Set
+`AGENT_MEMORY_BRIDGE_AUTHORITY_URL`, or `[deployment].authority_url` in the
+bridge config, when the canonical authority is a remote Streamable HTTP server.
+The hook then refuses to open a local database and reports
+`adapter_backend_unsupported`. A missing local database is `unknown`. Neither
+state means "AMB is unavailable" or "memory had no hit". This version does not
+call the remote authority. A live host session is not claimed by these
+repository checks.
 
 ## Hermes
 

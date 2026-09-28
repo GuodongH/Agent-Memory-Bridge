@@ -269,6 +269,18 @@ def resolve_domain_title_prefix() -> str:
     )
 
 
+def resolve_remote_authority_url() -> str | None:
+    """Return an explicit remote authority URL, never a local database fallback."""
+
+    raw = _first_env("AGENT_MEMORY_BRIDGE_AUTHORITY_URL")
+    if raw and raw.replace("\x00", "").strip():
+        return raw.replace("\x00", "").strip()
+    configured = _config_value("deployment", "authority_url")
+    if isinstance(configured, str) and configured.replace("\x00", "").strip():
+        return configured.replace("\x00", "").strip()
+    return None
+
+
 def resolve_bridge_db_path() -> Path:
     return _resolve_path(
         "AGENT_MEMORY_BRIDGE_DB_PATH",

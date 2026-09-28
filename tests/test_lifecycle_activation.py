@@ -165,6 +165,8 @@ def test_opencode_plugin_uses_same_entrypoint_and_pending_prompt_lane() -> None:
     assert "lifecycle-hook" in source
     assert "session.created" in source
     assert "experimental.session.compacting" in source
+    assert "properties.info" in source or "info.id" in source
+    assert "HOOK_TIMEOUT_MS = 10000" in source
     assert '"message.updated"' not in source
     assert "JSON.stringify(event" not in source
     assert "pending lane" in source
@@ -275,16 +277,78 @@ def test_material_recall_distinguishes_hit_no_hit_irrelevant_and_repeat(tmp_path
     assert "not an unavailable bridge" in irrelevant["hookSpecificOutput"]["additionalContext"]
 
 
-def test_unavailable_is_not_reported_as_no_hit(tmp_path: Path, monkeypatch) -> None:
+def test_missing_local_database_is_not_reported_as_amb_unavailable(tmp_path: Path, monkeypatch) -> None:
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
     response = run_hook_payload(task_payload(repo, MATERIAL))
     row = evidence_rows(home)[-1]
-    assert row["availability"] == "unavailable"
-    assert row["recall_state"] == "unavailable"
+    context = response["hookSpecificOutput"]["additionalContext"]
+    assert row["authority_mode"] == "unknown"
+    assert row["availability"] == "unknown"
+    assert row["recall_state"] == "skipped"
     assert row["recall_invoked"] is False
+    assert row["rule_id"] == "authority-unknown"
     assert not (home / "bridge.db").exists()
-    assert "not an empty memory result" in response["hookSpecificOutput"]["additionalContext"]
-    assert "no matching memory" not in response["hookSpecificOutput"]["additionalContext"]
+    assert "not an unavailable bridge" in context
+    assert "not an empty memory result" in context
+    assert "AMB was unavailable" not in context
+    assert "no matching memory" not in context
+
+
+def test_remote_authority_does_not_open_a_stale_local_database(tmp_path: Path, monkeypatch) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    remember(home, "project:fixture", MEMORY)
+    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_AUTHORITY_URL", "https://amb.example/mcp")
+
+    def fail_if_opened(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("local database opened despite a remote authority")
+
+    monkeypatch.setattr("agent_mem_bridge.storage.MemoryStore", fail_if_opened)
+    response = run_hook_payload(task_payload(repo, MATERIAL, session_id="remote-session"))
+    row = evidence_rows(home)[-1]
+    context = response["hookSpecificOutput"]["additionalContext"]
+    assert row["authority_mode"] == "remote"
+    assert row["availability"] == "adapter_backend_unsupported"
+    assert row["recall_invoked"] is False
+    assert row["rule_id"] == "adapter-backend-unsupported"
+    assert "https://amb.example" not in context
+    assert "https://amb.example" not in evidence_text(home)
+    assert MEMORY not in context
+    assert "not an unavailable bridge" in context
+    assert "not an empty memory result" in context
+
+
+def test_config_authority_url_blocks_local_fallback(tmp_path: Path, monkeypatch) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    remember(home, "project:fixture", MEMORY)
+    (home / "config.toml").write_text(
+        '[deployment]\nauthority_url = "https://config.example/mcp"\n',
+        encoding="utf-8",
+    )
+    response = run_hook_payload(task_payload(repo, MATERIAL, session_id="config-remote"))
+    row = evidence_rows(home)[-1]
+    assert row["availability"] == "adapter_backend_unsupported"
+    assert row["recall_invoked"] is False
+    assert MEMORY not in response["hookSpecificOutput"]["additionalContext"]
+    assert "https://config.example" not in evidence_text(home)
+
+
+def test_exact_repeat_is_suppressed_but_a_paraphrase_recalls_again(tmp_path: Path, monkeypatch) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    remember(home, "project:fixture", MEMORY)
+    first = "The schema choice for the run ledger may be constrained by a prior project decision."
+    paraphrase = "A prior project decision may still constrain the run ledger schema choice."
+    run_hook_payload(task_payload(repo, first, session_id="same-need"))
+    repeated = run_hook_payload(task_payload(repo, first, session_id="same-need"))
+    changed = run_hook_payload(task_payload(repo, paraphrase, session_id="same-need"))
+    first_row, repeat_row, paraphrase_row = evidence_rows(home)[-3:]
+    assert first_row["recall_invoked"] is True
+    assert repeat_row["repeat_suppressed"] is True
+    assert repeat_row["rule_id"] == "exact-prompt-repeat"
+    assert repeat_row["recall_invoked"] is False
+    assert repeated == {"continue": True}
+    assert paraphrase_row["recall_invoked"] is True
+    assert paraphrase_row["repeat_suppressed"] is False
+    assert "Untrusted governed context" in changed["hookSpecificOutput"]["additionalContext"]
 
 
 def test_scope_failures_do_not_mutate_bindings_or_accept_caller_namespace(tmp_path: Path, monkeypatch) -> None:
@@ -382,7 +446,7 @@ def test_recall_error_is_not_a_no_hit(tmp_path: Path, monkeypatch) -> None:
     assert row["recall_state"] == "error"
     assert row["recall_invoked"] is True
     assert row["error_type"]
-    assert "not as an empty memory result" in response["hookSpecificOutput"]["additionalContext"]
+    assert "not an empty memory result" in response["hookSpecificOutput"]["additionalContext"]
 
 
 def test_cli_hook_entrypoint_handles_spaced_cwd_and_invalid_input(tmp_path: Path, monkeypatch) -> None:
