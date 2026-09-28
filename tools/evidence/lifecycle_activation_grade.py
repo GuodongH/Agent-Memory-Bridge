@@ -154,10 +154,11 @@ def score_pack(
             results.append(_not_run(case))
         else:
             results.append(score_observation(case, observation, expected_freeze=freeze))
-    lanes = host_lanes(observations)
+    lanes = host_lanes(observations, freeze)
     metrics = build_metrics(results)
     return {
         "schema": REPORT_SCHEMA,
+        "scorer_sha256": scorer_sha256(),
         "freeze": freeze,
         "host_lanes": lanes,
         "instrument": instrument_checks(pack, lanes, freeze),
@@ -253,7 +254,10 @@ def build_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def host_lanes(observations: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+def host_lanes(
+    observations: list[dict[str, Any]],
+    expected_freeze: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
     lanes = {
         "codex": {
             "status": "NOT_RUN",
@@ -274,11 +278,13 @@ def host_lanes(observations: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         host = str((observation.get("host") or {}).get("id") or "")
         if host not in lanes:
             continue
-        if observation.get("execution_kind") != "live" or not _live_trace_complete(observation):
+        if observation.get("execution_kind") != "live":
             continue
         access = observation.get("fixture_access") if isinstance(observation.get("fixture_access"), dict) else {}
-        if access.get("direct_read") is True:
+        leaked = access.get("direct_read") is True
+        if leaked:
             lanes[host]["contaminated_case_ids"].append(observation.get("case_id"))
+        if leaked or _live_gate_reasons(observation, expected_freeze):
             if lanes[host]["status"] != "SCORED":
                 lanes[host]["status"] = "INCONCLUSIVE"
                 lanes[host]["execution_kind"] = "live"
