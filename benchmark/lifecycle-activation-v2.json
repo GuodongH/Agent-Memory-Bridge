@@ -1,0 +1,682 @@
+{
+  "schema": "amb.lifecycle-activation-benchmark.v2",
+  "version": 2,
+  "frozen_on": "2026-09-28",
+  "issue": 50,
+  "reused_from": "Closed pull request 48 contributed the activation classes, negative controls, and observable-invocation rule. It is not the target architecture and its synthetic trials are not host evidence.",
+  "cases": [
+    {
+      "id": "fresh-session-continuation",
+      "scenario": "fresh-session continuation",
+      "expected_decision": "must_recall",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "useful_hit",
+      "useful_marker": "fixture-continuation-token",
+      "max_recall_calls": 2,
+      "prompt": "Start fresh on this checkout. Reply with the continuation token recorded for the listener.",
+      "evidence_route": "A recall tool call bound to the fixture namespace before the token is used. Prose that says the token was remembered is not evidence.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "README.md": "Listener settings live outside this checkout.\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:lifecycle-fixture",
+            "title": "Listener continuation",
+            "tags": [
+              "kind:fact"
+            ],
+            "content": "continuation token: fixture-continuation-token"
+          }
+        ]
+      },
+      "final_text_must_include": [
+        "fixture-continuation-token"
+      ],
+      "final_text_must_not_include": [],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "continuation token: fixture-continuation-token",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-continuation-token",
+          "repo_paths_read": [
+            "README.md"
+          ]
+        },
+        "bad": {
+          "tool_calls": [],
+          "final_text": "I remembered fixture-continuation-token",
+          "repo_paths_read": []
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "required_recall"
+    },
+    {
+      "id": "architecture-constraint",
+      "scenario": "prior architecture/constraint dependency",
+      "expected_decision": "must_recall",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "useful_hit",
+      "useful_marker": "fixture-single-sqlite-authority",
+      "max_recall_calls": 2,
+      "prompt": "Add a cache for the fixture service. Reply with the storage-authority token you must preserve.",
+      "evidence_route": "Recall the recorded authority token before choosing a cache design. The checkout does not contain that token.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "src/cache_notes.md": "A cache can be added beside the service.\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:lifecycle-fixture",
+            "title": "Storage authority",
+            "tags": [
+              "kind:decision"
+            ],
+            "content": "storage authority token: fixture-single-sqlite-authority"
+          }
+        ]
+      },
+      "final_text_must_include": [
+        "fixture-single-sqlite-authority"
+      ],
+      "final_text_must_not_include": [],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "storage authority token: fixture-single-sqlite-authority",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-single-sqlite-authority",
+          "repo_paths_read": [
+            "src/cache_notes.md"
+          ]
+        },
+        "bad": {
+          "tool_calls": [],
+          "final_text": "Use fixture-single-sqlite-authority",
+          "repo_paths_read": [
+            "src/cache_notes.md"
+          ]
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "required_recall"
+    },
+    {
+      "id": "known-project-gotcha",
+      "scenario": "known project gotcha",
+      "expected_decision": "must_recall",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "useful_hit",
+      "useful_marker": "fixture-do-not-rewrite-latency-snapshots",
+      "max_recall_calls": 2,
+      "prompt": "I am about to refresh the fixture benchmark report. Reply with the gotcha token that applies before writing it.",
+      "evidence_route": "Recall the project gotcha token. A final answer that merely contains the token is not invocation evidence.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "scripts/refresh_report.py": "# Write the report to the path you were given.\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:lifecycle-fixture",
+            "title": "Report gotcha",
+            "tags": [
+              "kind:gotcha"
+            ],
+            "content": "gotcha token: fixture-do-not-rewrite-latency-snapshots"
+          }
+        ]
+      },
+      "final_text_must_include": [
+        "fixture-do-not-rewrite-latency-snapshots"
+      ],
+      "final_text_must_not_include": [],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "gotcha token: fixture-do-not-rewrite-latency-snapshots",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-do-not-rewrite-latency-snapshots",
+          "repo_paths_read": [
+            "scripts/refresh_report.py"
+          ]
+        },
+        "bad": {
+          "tool_calls": [],
+          "final_text": "I remembered fixture-do-not-rewrite-latency-snapshots",
+          "repo_paths_read": []
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "required_recall"
+    },
+    {
+      "id": "indirect-history-dependency",
+      "scenario": "indirect project-history dependency without memory keywords",
+      "expected_decision": "must_recall",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "useful_hit",
+      "useful_marker": "fixture-wal-checkpoint-before-backup",
+      "max_recall_calls": 2,
+      "prompt": "Continue the backup approach we settled on before this checkout. Reply with the single approach token to follow.",
+      "evidence_route": "The task does not say memory, remember, recall, or AMB. The approach token exists only in the bound project namespace.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "BACKUP.md": "Backup notes are not in this file.\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:lifecycle-fixture",
+            "title": "Backup approach",
+            "tags": [
+              "kind:decision"
+            ],
+            "content": "approach token: fixture-wal-checkpoint-before-backup"
+          }
+        ]
+      },
+      "final_text_must_include": [
+        "fixture-wal-checkpoint-before-backup"
+      ],
+      "final_text_must_not_include": [],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "approach token: fixture-wal-checkpoint-before-backup",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-wal-checkpoint-before-backup",
+          "repo_paths_read": [
+            "BACKUP.md"
+          ]
+        },
+        "bad": {
+          "tool_calls": [],
+          "final_text": "fixture-wal-checkpoint-before-backup",
+          "repo_paths_read": [
+            "BACKUP.md"
+          ]
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "required_recall"
+    },
+    {
+      "id": "stale-superseded-conflict",
+      "scenario": "stale/superseded-memory conflict",
+      "expected_decision": "recall_and_reconcile",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "useful_hit",
+      "useful_marker": "fixture-retired-port-1111",
+      "current_marker": "fixture-current-port-2222",
+      "stale_marker": "fixture-retired-port-1111",
+      "repo_evidence_path": "NOTES.md",
+      "max_recall_calls": 2,
+      "prompt": "Set the fixture listener. Reply with only the current port token.",
+      "evidence_route": "Recall the superseded port record, read NOTES.md, and answer with the current port token only.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "NOTES.md": "current port token: fixture-current-port-2222\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:lifecycle-fixture",
+            "title": "Retired listener port",
+            "tags": [
+              "kind:fact",
+              "lifecycle:superseded"
+            ],
+            "content": "port token: fixture-retired-port-1111\nstatus: superseded"
+          }
+        ]
+      },
+      "final_text_must_include": [
+        "fixture-current-port-2222"
+      ],
+      "final_text_must_not_include": [
+        "fixture-retired-port-1111"
+      ],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "port token: fixture-retired-port-1111\nstatus: superseded",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-current-port-2222",
+          "repo_paths_read": [
+            "NOTES.md"
+          ]
+        },
+        "bad": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "port token: fixture-retired-port-1111\nstatus: superseded",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-retired-port-1111",
+          "repo_paths_read": [
+            "NOTES.md"
+          ]
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "governance"
+    },
+    {
+      "id": "no-relevant-memory",
+      "scenario": "successful no-relevant-memory result",
+      "expected_decision": "must_recall_then_no_hit",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "no_hit",
+      "useful_marker": "",
+      "distractor_marker": "fixture-other-exception-3333",
+      "max_recall_calls": 2,
+      "prompt": "Is a checksum-exception token recorded for this project? If not, say that no relevant memory was found.",
+      "evidence_route": "A successful recall on the bound namespace returns no row. That is a no-hit, not an unavailable tool.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "README.md": "Checksum exceptions are not documented in this checkout.\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:other-fixture",
+            "title": "Other project exception",
+            "tags": [
+              "kind:fact"
+            ],
+            "content": "exception token: fixture-other-exception-3333"
+          }
+        ]
+      },
+      "final_text_must_include": [],
+      "final_text_must_not_include": [
+        "fixture-secret-exception-9999",
+        "fixture-other-exception-3333"
+      ],
+      "final_text_must_match_any": [
+        "no relevant memory"
+      ],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "",
+              "result_count": 0,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "no relevant memory was found",
+          "repo_paths_read": [
+            "README.md"
+          ]
+        },
+        "bad": {
+          "tool_calls": [],
+          "final_text": "fixture-secret-exception-9999",
+          "repo_paths_read": []
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "governance"
+    },
+    {
+      "id": "amb-unavailable",
+      "scenario": "AMB unavailable/error",
+      "expected_decision": "recall_or_report_unavailable",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "unavailable",
+      "useful_marker": "fixture-do-not-rewrite-latency-snapshots",
+      "max_recall_calls": 2,
+      "prompt": "Which gotcha token applies before writing the fixture benchmark report?",
+      "evidence_route": "The bridge errors or does not start. The host must say the tool is unavailable and must not describe that as an empty result or invent the gotcha token.",
+      "fixture": {
+        "amb_mode": "unavailable",
+        "files": {
+          "scripts/refresh_report.py": "# Write the report to the path you were given.\n"
+        },
+        "memories": []
+      },
+      "final_text_must_include": [],
+      "final_text_must_not_include": [
+        "fixture-do-not-rewrite-latency-snapshots",
+        "no relevant memory"
+      ],
+      "final_text_must_match_any": [
+        "unavailable",
+        "could not recall",
+        "could not consult"
+      ],
+      "probes": {
+        "adequate_good": {
+          "amb_available": false,
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": true,
+              "result_text": "connection failed",
+              "result_count": 0,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "The memory tool is unavailable.",
+          "repo_paths_read": []
+        },
+        "bad": {
+          "amb_available": false,
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": true,
+              "result_text": "connection failed",
+              "result_count": 0,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "no relevant memory was found",
+          "repo_paths_read": []
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "governance"
+    },
+    {
+      "id": "isolated-typo",
+      "scenario": "isolated typo or deterministic local edit",
+      "expected_decision": "do_not_recall",
+      "expected_namespace": null,
+      "expected_recall_state": null,
+      "useful_marker": "",
+      "max_recall_calls": 0,
+      "prompt": "Fix the typo in greeting.py. Change helo to hello. Do not do any other work.",
+      "evidence_route": "The edit is fully determined by the file. Any AMB tool call is a false activation.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "greeting.py": "def helo():\n    return \"hi\"\n"
+        },
+        "memories": []
+      },
+      "final_text_must_include": [],
+      "final_text_must_not_include": [],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [],
+          "final_text": "Updated greeting.py.",
+          "repo_paths_read": [
+            "greeting.py"
+          ]
+        },
+        "bad": {
+          "tool_calls": [
+            {
+              "tool": "mcp__agentMemoryBridge__recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "",
+              "result_count": 0,
+              "elapsed_ms": 4
+            }
+          ],
+          "final_text": "Updated greeting.py.",
+          "repo_paths_read": [
+            "greeting.py"
+          ]
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "negative_control"
+    },
+    {
+      "id": "repeated-recall",
+      "scenario": "repeated-recall negative control",
+      "expected_decision": "do_not_repeat",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": null,
+      "useful_marker": "fixture-repeat-token-already-verified",
+      "max_recall_calls": 0,
+      "prompt": "Earlier in this session, a project lookup already returned repeat token fixture-repeat-token-already-verified, and NOTES.md already contains that same token. Update the comment punctuation in NOTES.md from 'Ready.' to 'Ready'.",
+      "evidence_route": "The needed token is already in the session and in NOTES.md. Another recall is unnecessary.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "NOTES.md": "repeat token: fixture-repeat-token-already-verified\nReady.\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:lifecycle-fixture",
+            "title": "Repeat token",
+            "tags": [
+              "kind:fact"
+            ],
+            "content": "repeat token: fixture-repeat-token-already-verified"
+          }
+        ]
+      },
+      "final_text_must_include": [],
+      "final_text_must_not_include": [],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [],
+          "final_text": "Updated NOTES.md.",
+          "repo_paths_read": [
+            "NOTES.md"
+          ]
+        },
+        "bad": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "repeat token: fixture-repeat-token-already-verified",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "Updated NOTES.md.",
+          "repo_paths_read": [
+            "NOTES.md"
+          ]
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "negative_control"
+    },
+    {
+      "id": "cross-client-handoff",
+      "scenario": "cross-client/project handoff",
+      "expected_decision": "must_recall",
+      "expected_namespace": "project:lifecycle-fixture",
+      "expected_recall_state": "useful_hit",
+      "useful_marker": "fixture-cross-client-token",
+      "distractor_marker": "fixture-other-client-token",
+      "max_recall_calls": 2,
+      "prompt": "Another client left a handoff for this checkout's project. Reply with only that handoff token.",
+      "evidence_route": "Recall the bound project namespace. A hit from project:other-fixture is the wrong project.",
+      "fixture": {
+        "amb_mode": "available",
+        "files": {
+          "README.md": "Handoff notes for this checkout are not in this file.\n"
+        },
+        "memories": [
+          {
+            "namespace": "project:lifecycle-fixture",
+            "title": "Cross-client handoff",
+            "tags": [
+              "kind:handoff"
+            ],
+            "content": "handoff token: fixture-cross-client-token"
+          },
+          {
+            "namespace": "project:other-fixture",
+            "title": "Other project handoff",
+            "tags": [
+              "kind:handoff"
+            ],
+            "content": "handoff token: fixture-other-client-token"
+          }
+        ]
+      },
+      "final_text_must_include": [
+        "fixture-cross-client-token"
+      ],
+      "final_text_must_not_include": [
+        "fixture-other-client-token"
+      ],
+      "final_text_must_match_any": [],
+      "probes": {
+        "adequate_good": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:lifecycle-fixture",
+              "is_error": false,
+              "result_text": "handoff token: fixture-cross-client-token",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-cross-client-token",
+          "repo_paths_read": [
+            "README.md"
+          ]
+        },
+        "bad": {
+          "tool_calls": [
+            {
+              "tool": "recall",
+              "namespace": "project:other-fixture",
+              "is_error": false,
+              "result_text": "handoff token: fixture-other-client-token",
+              "result_count": 1,
+              "elapsed_ms": 5
+            }
+          ],
+          "final_text": "fixture-other-client-token",
+          "repo_paths_read": []
+        },
+        "unavailable_evidence": {
+          "trace_complete": false,
+          "amb_available": null,
+          "tool_calls": [],
+          "final_text": "",
+          "repo_paths_read": []
+        }
+      },
+      "class": "required_recall"
+    }
+  ],
+  "resolves_namespace_from": "repository-binding",
+  "baseline": "v1 plain_mcp_baseline remains the recorded Codex FAIL and is not adapter evidence"
+}

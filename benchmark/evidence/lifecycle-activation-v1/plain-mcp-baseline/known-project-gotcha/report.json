@@ -1,0 +1,445 @@
+{
+  "schema": "amb.lifecycle-activation-report.v1",
+  "freeze": {
+    "ok": true,
+    "expected": {
+      "benchmark/lifecycle-activation-v1.json": "501e7ad4cfaf91496f5f39878c88cecb659967b33ec7ff1470bee92340748e03",
+      "benchmark/lifecycle-activation-v1.md": "127befea32b094b969510b8accbf315b7ebab91121d1ede20666d17e8703f2b3"
+    },
+    "actual": {
+      "benchmark/lifecycle-activation-v1.json": "501e7ad4cfaf91496f5f39878c88cecb659967b33ec7ff1470bee92340748e03",
+      "benchmark/lifecycle-activation-v1.md": "127befea32b094b969510b8accbf315b7ebab91121d1ede20666d17e8703f2b3"
+    },
+    "mismatches": []
+  },
+  "host_lanes": {
+    "codex": {
+      "status": "SCORED",
+      "execution_kind": "live",
+      "case_ids": [
+        "known-project-gotcha"
+      ],
+      "contaminated_case_ids": [],
+      "runnable_path": "python ./scripts/run_lifecycle_activation_benchmark.py collect-codex --case-id known-project-gotcha"
+    },
+    "opencode": {
+      "status": "NOT_RUN",
+      "execution_kind": null,
+      "case_ids": [],
+      "contaminated_case_ids": [],
+      "runnable_path": "python ./scripts/run_lifecycle_activation_benchmark.py prepare-host --host opencode --case-id known-project-gotcha"
+    }
+  },
+  "instrument": {
+    "checks": {
+      "freeze_verified": true,
+      "required_scenarios_present": true,
+      "negative_controls_present": true,
+      "metrics_not_collapsed": true,
+      "codex_live_trace": true,
+      "opencode_explicit": true
+    },
+    "pass": true
+  },
+  "metrics": {
+    "required_recall_hit_rate": {
+      "numerator": 0,
+      "complement": 1,
+      "inconclusive": 0,
+      "not_run": 4,
+      "rate": 0.0
+    },
+    "false_activation_rate": {
+      "numerator": 0,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 2,
+      "rate": null
+    },
+    "namespace_resolution_correct_rate": {
+      "numerator": 0,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 9,
+      "rate": null
+    },
+    "useful_hit_rate_given_recall": {
+      "numerator": 0,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 5,
+      "rate": null
+    },
+    "no_hit_correct_rate": {
+      "numerator": 0,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 1,
+      "rate": null
+    },
+    "unavailable_vs_empty_correct_rate": {
+      "numerator": 0,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 1,
+      "rate": null
+    },
+    "stale_memory_misuse_count": 0,
+    "repeated_or_unnecessary_recall_count": 0,
+    "overhead": [
+      {
+        "id": "fresh-session-continuation",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "architecture-constraint",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "known-project-gotcha",
+        "status": "FAIL",
+        "latency_ms": 13782.018,
+        "recall_calls": 0,
+        "input_tokens": 46639,
+        "output_tokens": 1078,
+        "pathological_recall": false
+      },
+      {
+        "id": "indirect-history-dependency",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "stale-superseded-conflict",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "no-relevant-memory",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "amb-unavailable",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "isolated-typo",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "repeated-recall",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      },
+      {
+        "id": "cross-client-handoff",
+        "status": "NOT_RUN",
+        "latency_ms": null,
+        "recall_calls": 0,
+        "input_tokens": null,
+        "output_tokens": null,
+        "pathological_recall": false
+      }
+    ]
+  },
+  "results": [
+    {
+      "id": "fresh-session-continuation",
+      "scenario": "fresh-session continuation",
+      "class": "required_recall",
+      "expected_decision": "must_recall",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "architecture-constraint",
+      "scenario": "prior architecture/constraint dependency",
+      "class": "required_recall",
+      "expected_decision": "must_recall",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "known-project-gotcha",
+      "scenario": "known project gotcha",
+      "class": "required_recall",
+      "expected_decision": "must_recall",
+      "status": "FAIL",
+      "reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-do-not-rewrite-latency-snapshots"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": false,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": 13782.018,
+      "input_tokens": 46639,
+      "output_tokens": 1078,
+      "execution_kind": "live",
+      "host_id": "codex"
+    },
+    {
+      "id": "indirect-history-dependency",
+      "scenario": "indirect project-history dependency without memory keywords",
+      "class": "required_recall",
+      "expected_decision": "must_recall",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "stale-superseded-conflict",
+      "scenario": "stale/superseded-memory conflict",
+      "class": "governance",
+      "expected_decision": "recall_and_reconcile",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "no-relevant-memory",
+      "scenario": "successful no-relevant-memory result",
+      "class": "governance",
+      "expected_decision": "must_recall_then_no_hit",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "amb-unavailable",
+      "scenario": "AMB unavailable/error",
+      "class": "governance",
+      "expected_decision": "recall_or_report_unavailable",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "isolated-typo",
+      "scenario": "isolated typo or deterministic local edit",
+      "class": "negative_control",
+      "expected_decision": "do_not_recall",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "repeated-recall",
+      "scenario": "repeated-recall negative control",
+      "class": "negative_control",
+      "expected_decision": "do_not_repeat",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    },
+    {
+      "id": "cross-client-handoff",
+      "scenario": "cross-client/project handoff",
+      "class": "required_recall",
+      "expected_decision": "must_recall",
+      "status": "NOT_RUN",
+      "reasons": [
+        "observation_missing"
+      ],
+      "recall_calls": 0,
+      "amb_calls": 0,
+      "namespace_results": [],
+      "result_states": [],
+      "required_recall_hit": null,
+      "false_activation": null,
+      "no_hit_correct": null,
+      "unavailable_discriminated": null,
+      "stale_misuse": null,
+      "repeated_recall_count": 0,
+      "pathological_recall": false,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "execution_kind": null,
+      "host_id": null
+    }
+  ]
+}

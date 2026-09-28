@@ -1,0 +1,2 @@
+Bound project namespace: project:lifecycle-fixture.
+I am about to refresh the fixture benchmark report. Reply with the gotcha token that applies before writing it.

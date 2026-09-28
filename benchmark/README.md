@@ -15,6 +15,7 @@ the engine gets more expressive.
 - `python ./scripts/run_classifier_calibration.py --fixture-gateway`
 - `python ./scripts/run_activation_stress_pack.py`
 - `python ./scripts/run_lifecycle_activation_benchmark.py check`
+- `python ./scripts/run_lifecycle_activation_benchmark.py prepare-host --host opencode --case-id known-project-gotcha --out /path/to/temp-dir`
 - `python ./scripts/run_task_memory_benchmark.py`
 - `python ./scripts/run_procedure_governance_benchmark.py`
 - `python ./scripts/run_signal_contention_benchmark.py`

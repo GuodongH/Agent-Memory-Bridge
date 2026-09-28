@@ -21,9 +21,11 @@ from tools.evidence._temporary_store import ScopedTemporaryMemoryStore
 from tools.evidence.lifecycle_activation import (
     ROOT,
     assess_fixture_access,
+    bind_fixture_namespace,
     build_allowlisted_filesystem_argv,
     build_codex_collect_argv,
     find_bwrap,
+    git_commit_fixture,
     model_provider_override,
     check_pack,
     load_pack,
@@ -31,6 +33,7 @@ from tools.evidence.lifecycle_activation import (
     memory_only_markers,
     parse_codex_exec_jsonl,
     prepare_collector_layout,
+    prepare_governed_fixture,
     render_collector_codex_preamble,
     render_host_plan,
     render_isolated_codex_config,
@@ -38,6 +41,7 @@ from tools.evidence.lifecycle_activation import (
     render_text,
     sandbox_for_case,
     score_pack,
+    scorer_sha256,
     seed_case_memories,
     verify_freeze,
 )
@@ -54,13 +58,25 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0 if report["ok"] else 1
+    if args.command in {"print-host-plan", "prepare-host"} and args.host == "opencode":
+        if args.out is None:
+            print("opencode prepare-host requires --out", file=sys.stderr)
+            return 2
+        pack = load_pack(version="v2")
+        case = next((item for item in pack["cases"] if item["id"] == args.case_id), None)
+        if case is None:
+            print(f"unknown case {args.case_id}", file=sys.stderr)
+            return 2
+        prepared = prepare_governed_fixture(case, args.out, host="opencode", model=args.model)
+        print(prepared["command"])
+        return 0
     if args.command == "print-host-plan":
-        print(render_host_plan(load_pack(), args.host, args.case_id), end="")
+        print(render_host_plan(load_pack(version=args.pack), args.host, args.case_id), end="")
         return 0
     if args.command == "score":
-        return _score(args.observations, args.format, args.report_path)
+        return _score(args.observations, args.format, args.report_path, args.pack)
     if args.command == "collect-codex":
-        return collect_codex(args.case_id, args.out, args.model, args.timeout)
+        return collect_codex(args.case_id, args.out, args.model, args.timeout, args.pack, args.condition)
     parser.error(f"unsupported command {args.command}")
     return 2
 
@@ -273,12 +289,25 @@ def _stop_process(process: subprocess.Popen[str] | None) -> None:
         process.kill()
 
 
-def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> int:
-    freeze = verify_freeze()
+def collect_codex(
+    case_id: str,
+    out_dir: Path,
+    model: str,
+    timeout: float,
+    pack_version: str = "v1",
+    condition: str = "plain_mcp_baseline",
+) -> int:
+    if condition == "adapter_enabled" and pack_version != "v2":
+        print("adapter collection requires the frozen v2 pack", file=sys.stderr)
+        return 2
+    if condition not in {"plain_mcp_baseline", "adapter_enabled"}:
+        print(f"unsupported condition {condition}", file=sys.stderr)
+        return 2
+    freeze = verify_freeze(version=pack_version)
     if not freeze["ok"]:
         print(json.dumps({"ok": False, "problems": ["freeze mismatch"]}, indent=2))
         return 1
-    pack = load_pack()
+    pack = load_pack(version=pack_version)
     case = next((item for item in pack["cases"] if item["id"] == case_id), None)
     if case is None:
         print(f"unknown case {case_id}", file=sys.stderr)
@@ -299,18 +328,32 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
         encoding="utf-8",
     )
     config_path = store_home / "config.toml"
-    config_path.write_text('[bridge]\ndb_path = "fixture-store.sqlite"\n', encoding="utf-8")
-    if case["fixture"]["amb_mode"] == "available":
-        store = ScopedTemporaryMemoryStore(store_home / "fixture-store.sqlite", store_home / "logs")
-        try:
-            seed_case_memories(store, case)
-        finally:
-            store.close()
+    if pack_version == "v2":
+        git_commit_fixture(fixture_repo)
+        bind_fixture_namespace(case, fixture_repo, store_home)
+    else:
+        config_path.write_text('[bridge]\ndb_path = "fixture-store.sqlite"\n', encoding="utf-8")
+        if case["fixture"]["amb_mode"] == "available":
+            store = ScopedTemporaryMemoryStore(store_home / "fixture-store.sqlite", store_home / "logs")
+            try:
+                seed_case_memories(store, case)
+            finally:
+                store.close()
     codex_home.mkdir(parents=True, exist_ok=True)
     codex_home.chmod(0o700)
     server: subprocess.Popen[str] | None = None
     try:
-        if case["fixture"]["amb_mode"] == "available":
+        if condition == "adapter_enabled":
+            bridge_python = _bridge_python()
+            _install_adapter_hook(
+                codex_home=codex_home,
+                fixture_repo=fixture_repo,
+                store_home=store_home,
+                python_path=bridge_python,
+                source_mount=Path("/opt/amb-lifecycle-src"),
+            )
+            codex_config = ""
+        elif case["fixture"]["amb_mode"] == "available":
             bridge_python = _bridge_python()
             server, url, token_source = _start_fixture_http(store_home, bridge_python)
             proxy_token = codex_home / "proxy-token"
@@ -340,7 +383,11 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
         catalog_copy = codex_home / "model-catalog.json"
         if catalog_source.is_file():
             shutil.copyfile(catalog_source, catalog_copy)
-        preamble = render_collector_codex_preamble(catalog_path=str(catalog_copy), fixture_repo=str(fixture_repo))
+        preamble = render_collector_codex_preamble(
+            catalog_path=str(catalog_copy),
+            fixture_repo=str(fixture_repo),
+            plugins=condition == "adapter_enabled",
+        )
         (codex_home / "config.toml").write_text(preamble + codex_config, encoding="utf-8")
         native = _codex_native()
         node_prefix = _node_prefix(native)
@@ -356,9 +403,19 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
         prompt_path.write_text(case["prompt"], encoding="utf-8")
         stdout_path = out_dir / "codex.jsonl"
         bwrap = _require_bwrap()
-        protected = [ROOT, store_home, Path.home() / ".codex", Path.home() / ".cache", Path("/tmp")]
+        source_mount = Path("/opt/amb-lifecycle-src")
+        protected = [ROOT, Path.home() / ".codex", Path.home() / ".cache", Path("/tmp")]
         ro_binds = [(node_prefix, node_prefix), (venv, venv)]
         rw_binds = [(codex_home, codex_home), (layout["workspace_parent"], layout["workspace_parent"])]
+        scan_roots = [node_prefix, venv, fixture_repo, codex_home]
+        absent = [ROOT, Path.home() / ".codex", Path.home() / ".cache"]
+        if condition == "adapter_enabled":
+            ro_binds.append((ROOT / "src", source_mount))
+            rw_binds.append((store_home, store_home))
+            scan_roots.append(source_mount)
+        else:
+            protected.append(store_home)
+            absent.append(store_home)
         try:
             probe = _probe_isolation(
                 bwrap=bwrap,
@@ -366,8 +423,8 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
                 rw_binds=rw_binds,
                 protected=protected,
                 markers=markers,
-                scan_roots=[node_prefix, venv, fixture_repo, codex_home],
-                absent=[ROOT, store_home, Path.home() / ".codex", Path.home() / ".cache"],
+                scan_roots=scan_roots,
+                absent=absent,
             )
         except (RuntimeError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
             print(
@@ -425,6 +482,7 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
             prompt=case["prompt"],
             codex_bin=str(native),
             config_overrides=[override],
+            condition=condition,
         )
         if "--add-dir" in argv or str(store_home) in argv or ":58080" in " ".join(argv):
             print("collector argv exposes the fixture store or production AMB", file=sys.stderr)
@@ -436,23 +494,30 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
             command=argv,
             protected_paths=protected,
         )
-        completed = subprocess.run(
-            isolated,
-            cwd=fixture_repo,
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                isolated,
+                cwd=fixture_repo,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
+            stdout, stderr, returncode = completed.stdout, completed.stderr, completed.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            stderr = f"{stderr}\ncollector timeout\n"
+            returncode = None
         elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
         secrets = [api_key]
         token_path = codex_home / "proxy-token"
         if token_path.is_file():
             secrets.append(token_path.read_text(encoding="utf-8").strip())
-        stdout_path.write_text(_redact(completed.stdout, secrets), encoding="utf-8")
-        (out_dir / "stderr.txt").write_text(_redact(completed.stderr, secrets), encoding="utf-8")
-        parsed = parse_codex_exec_jsonl(completed.stdout, interesting_paths=list(case["fixture"]["files"]))
+        stdout_path.write_text(_redact(stdout, secrets), encoding="utf-8")
+        (out_dir / "stderr.txt").write_text(_redact(stderr, secrets), encoding="utf-8")
+        parsed = parse_codex_exec_jsonl(stdout, interesting_paths=list(case["fixture"]["files"]))
         fixture_access = assess_fixture_access(
             parsed["commands"],
             markers=markers,
@@ -462,8 +527,13 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
             {
                 "schema": "amb.lifecycle-activation-observation.v1",
                 "case_id": case_id,
-                "trace_complete": parsed["event_count"] > 0,
+                "trace_complete": returncode == 0
+                and parsed["terminal_event"] == "turn.completed"
+                and bool(str(parsed["final_text"]).strip()),
+                "terminal_event": parsed["terminal_event"],
                 "execution_kind": "live",
+                "condition": condition,
+                "pack": pack_version,
                 "host": {"id": "codex", "version": version, "model": model},
                 "amb_available": case["fixture"]["amb_mode"] == "available",
                 "namespace_bound": case.get("expected_namespace"),
@@ -474,8 +544,11 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
                 "latency_ms": elapsed_ms,
                 "input_tokens": parsed["input_tokens"],
                 "output_tokens": parsed["output_tokens"],
-                "collector_exit_code": completed.returncode,
+                "collector_exit_code": returncode,
                 "freeze_sha256": freeze["actual"],
+                "scorer_sha256": scorer_sha256(),
+                "adapter": _adapter_observation(store_home) if condition == "adapter_enabled" else {"loaded": False},
+                "adapter_evidence": _adapter_evidence(store_home) if condition == "adapter_enabled" else [],
             },
             secrets,
         )
@@ -483,13 +556,117 @@ def collect_codex(case_id: str, out_dir: Path, model: str, timeout: float) -> in
         report = score_pack(pack, [observation], freeze=freeze)
         (out_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(render_text(report), end="")
-        return 0 if completed.returncode == 0 or observation["trace_complete"] else completed.returncode
+        if returncode is None:
+            return 1
+        return 0 if returncode == 0 or observation["trace_complete"] else returncode
     finally:
         _stop_process(server)
 
 
-def _score(observations_path: Path, output_format: str, report_path: Path | None) -> int:
-    freeze = verify_freeze()
+def _install_adapter_hook(
+    *,
+    codex_home: Path,
+    fixture_repo: Path,
+    store_home: Path,
+    python_path: Path,
+    source_mount: Path,
+) -> None:
+    capture = codex_home / "hook_capture.py"
+    log_path = store_home / "lifecycle" / "hook-responses.jsonl"
+    config_path = store_home / "config.toml"
+    capture.write_text(
+        "\n".join(
+            [
+                "import json, os, subprocess, sys",
+                "from pathlib import Path",
+                "payload = sys.stdin.read()",
+                "env = os.environ.copy()",
+                f"env['PYTHONPATH'] = {str(source_mount)!r}",
+                f"env['AGENT_MEMORY_BRIDGE_HOME'] = {str(store_home)!r}",
+                f"env['AGENT_MEMORY_BRIDGE_CONFIG'] = {str(config_path)!r}",
+                "env.pop('AGENT_MEMORY_BRIDGE_AUTHORITY_URL', None)",
+                f"completed = subprocess.run([{str(python_path)!r}, '-m', 'agent_mem_bridge', 'lifecycle-hook'], input=payload, text=True, capture_output=True, env=env)",
+                f"log = Path({str(log_path)!r})",
+                "log.parent.mkdir(parents=True, exist_ok=True)",
+                "with log.open('a', encoding='utf-8') as handle:",
+                "    handle.write(json.dumps({'returncode': completed.returncode, 'stdout': completed.stdout}) + '\\n')",
+                "sys.stdout.write(completed.stdout)",
+                "raise SystemExit(completed.returncode)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    command = f"/usr/bin/python3 {capture}"
+    document = {
+        "description": "Optional AMB lifecycle activation for one benchmark run.",
+        "hooks": {
+            "SessionStart": [
+                {
+                    "matcher": "startup|resume|clear|compact",
+                    "hooks": [{"type": "command", "command": command, "timeout": 10}],
+                }
+            ],
+            "UserPromptSubmit": [{"hooks": [{"type": "command", "command": command, "timeout": 10}]}],
+            "PreCompact": [
+                {"matcher": "manual|auto", "hooks": [{"type": "command", "command": command, "timeout": 10}]}
+            ],
+        },
+    }
+    hook_dir = fixture_repo / ".codex"
+    hook_dir.mkdir(parents=True, exist_ok=True)
+    (hook_dir / "hooks.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+
+def _adapter_records(store_home: Path) -> list[dict]:
+    path = store_home / "lifecycle" / "activation-evidence.jsonl"
+    records: list[dict] = []
+    if not path.is_file():
+        return records
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            records.append(item)
+    texts: list[str] = []
+    log_path = store_home / "lifecycle" / "hook-responses.jsonl"
+    if log_path.is_file():
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            stdout = item.get("stdout") if isinstance(item, dict) else ""
+            try:
+                payload = json.loads(stdout) if isinstance(stdout, str) and stdout.strip() else {}
+            except json.JSONDecodeError:
+                payload = {}
+            specific = payload.get("hookSpecificOutput") if isinstance(payload, dict) else None
+            context = specific.get("additionalContext") if isinstance(specific, dict) else ""
+            if isinstance(context, str) and context:
+                texts.append(context)
+    text_index = 0
+    for record in records:
+        if record.get("recall_invoked") is True:
+            record["result_text"] = texts[text_index] if text_index < len(texts) else ""
+            text_index += 1
+    return records
+
+
+def _adapter_observation(store_home: Path) -> dict[str, bool]:
+    return {"loaded": any(record.get("adapter_loaded") is True for record in _adapter_records(store_home))}
+
+
+def _adapter_evidence(store_home: Path) -> list[dict]:
+    return _adapter_records(store_home)
+
+
+def _score(observations_path: Path, output_format: str, report_path: Path | None, pack_version: str = "v1") -> int:
+    freeze = verify_freeze(version=pack_version)
     if not freeze["ok"]:
         print(json.dumps({"ok": False, "problems": ["freeze mismatch"], "mismatches": freeze["mismatches"]}, indent=2))
         return 1
@@ -497,7 +674,7 @@ def _score(observations_path: Path, output_format: str, report_path: Path | None
     if not isinstance(observations, list):
         print("observations must be a JSON list", file=sys.stderr)
         return 2
-    report = score_pack(load_pack(), observations, freeze=freeze)
+    report = score_pack(load_pack(version=pack_version), observations, freeze=freeze)
     rendered = render_text(report) if output_format == "text" else json.dumps(report, indent=2) + "\n"
     if report_path is not None:
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -547,12 +724,24 @@ def _parser() -> argparse.ArgumentParser:
     plan = subparsers.add_parser("print-host-plan", help="Print an isolated host command without running it.")
     plan.add_argument("--host", choices=("codex", "opencode"), required=True)
     plan.add_argument("--case-id", default="known-project-gotcha")
+    plan.add_argument("--pack", choices=("v1", "v2"), default="v1")
+    plan.add_argument("--out", type=Path)
+    plan.add_argument("--model", default="grok-4.7-build-fast")
+    prepare = subparsers.add_parser("prepare-host", help="Materialize one governed fixture and print its host command.")
+    prepare.add_argument("--host", choices=("opencode",), required=True)
+    prepare.add_argument("--case-id", default="known-project-gotcha")
+    prepare.add_argument("--pack", choices=("v2",), default="v2")
+    prepare.add_argument("--out", type=Path, required=True)
+    prepare.add_argument("--model", default="grok-4.7-build-fast")
     score = subparsers.add_parser("score", help="Score a JSON list of observations. Refuses a drifted freeze.")
     score.add_argument("--observations", type=Path, required=True)
+    score.add_argument("--pack", choices=("v1", "v2"), default="v1")
     score.add_argument("--format", choices=("json", "text"), default="json")
     score.add_argument("--report-path", type=Path)
     collect = subparsers.add_parser("collect-codex", help="Run one isolated Codex case and score its trace.")
     collect.add_argument("--case-id", default="known-project-gotcha")
+    collect.add_argument("--pack", choices=("v1", "v2"), default="v1")
+    collect.add_argument("--condition", choices=("plain_mcp_baseline", "adapter_enabled"), default="plain_mcp_baseline")
     collect.add_argument("--out", type=Path, required=True)
     collect.add_argument("--model", default="grok-4.7-build-fast")
     collect.add_argument("--timeout", type=float, default=240)

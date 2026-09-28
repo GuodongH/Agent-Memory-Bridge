@@ -11,10 +11,21 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from tools.evidence.lifecycle_activation_grade import (
+    OBSERVATION_SCHEMA,
+    REQUIRED_CASE_IDS,
+    host_lanes,  # noqa: F401
+    score_observation,
+    score_pack,  # noqa: F401
+    scorer_sha256,  # noqa: F401
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 PACK_PATH = ROOT / "benchmark" / "lifecycle-activation-v1.json"
@@ -22,44 +33,6 @@ RUBRIC_PATH = ROOT / "benchmark" / "lifecycle-activation-v1.md"
 FREEZE_PATH = ROOT / "benchmark" / "lifecycle-activation-v1.sha256"
 
 PACK_SCHEMA = "amb.lifecycle-activation-benchmark.v1"
-OBSERVATION_SCHEMA = "amb.lifecycle-activation-observation.v1"
-REPORT_SCHEMA = "amb.lifecycle-activation-report.v1"
-
-REQUIRED_CASE_IDS = (
-    "fresh-session-continuation",
-    "architecture-constraint",
-    "known-project-gotcha",
-    "indirect-history-dependency",
-    "stale-superseded-conflict",
-    "no-relevant-memory",
-    "amb-unavailable",
-    "isolated-typo",
-    "repeated-recall",
-    "cross-client-handoff",
-)
-
-AMB_TOOL_NAMES = frozenset(
-    {
-        "store",
-        "recall",
-        "browse",
-        "stats",
-        "forget",
-        "feedback",
-        "promote",
-        "annotate",
-        "revise",
-        "export",
-        "begin_run",
-        "record_run_event",
-        "get_run",
-        "complete_run",
-        "claim_signal",
-        "extend_signal_lease",
-        "ack_signal",
-    }
-)
-
 INDIRECT_FORBIDDEN_WORDS = re.compile(r"\b(?:memory|remember|recall|amb)\b", re.IGNORECASE)
 PROBE_EXPECTATIONS = {
     "adequate_good": "PASS",
@@ -68,8 +41,26 @@ PROBE_EXPECTATIONS = {
 }
 
 
-def load_pack(path: Path | None = None) -> dict[str, Any]:
-    pack_path = path or PACK_PATH
+PACK_VERSIONS = {
+    "v1": {
+        "schema": "amb.lifecycle-activation-benchmark.v1",
+        "pack": "benchmark/lifecycle-activation-v1.json",
+        "rubric": "benchmark/lifecycle-activation-v1.md",
+        "freeze": "benchmark/lifecycle-activation-v1.sha256",
+    },
+    "v2": {
+        "schema": "amb.lifecycle-activation-benchmark.v2",
+        "pack": "benchmark/lifecycle-activation-v2.json",
+        "rubric": "benchmark/lifecycle-activation-v2.md",
+        "freeze": "benchmark/lifecycle-activation-v2.sha256",
+    },
+}
+
+
+def load_pack(path: Path | None = None, version: str = "v1") -> dict[str, Any]:
+    if version not in PACK_VERSIONS:
+        raise ValueError(f"unsupported lifecycle pack {version}")
+    pack_path = path or (ROOT / PACK_VERSIONS[version]["pack"])
     pack = json.loads(pack_path.read_text(encoding="utf-8"))
     if not isinstance(pack, dict) or not isinstance(pack.get("cases"), list):
         raise ValueError("lifecycle activation pack must be an object with cases")
@@ -80,9 +71,11 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def verify_freeze(root: Path | None = None) -> dict[str, Any]:
+def verify_freeze(root: Path | None = None, version: str = "v1") -> dict[str, Any]:
+    if version not in PACK_VERSIONS:
+        raise ValueError(f"unsupported lifecycle pack {version}")
     project_root = root or ROOT
-    freeze_path = project_root / "benchmark" / "lifecycle-activation-v1.sha256"
+    freeze_path = project_root / PACK_VERSIONS[version]["freeze"]
     expected: dict[str, str] = {}
     for line in freeze_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -103,10 +96,12 @@ def verify_freeze(root: Path | None = None) -> dict[str, Any]:
     return {"ok": not mismatches, "expected": expected, "actual": actual, "mismatches": mismatches}
 
 
-def validate_pack(pack: dict[str, Any]) -> list[str]:
+def validate_pack(pack: dict[str, Any], version: str = "v1") -> list[str]:
     problems: list[str] = []
     cases = pack.get("cases")
-    if pack.get("schema") != PACK_SCHEMA:
+    if version not in PACK_VERSIONS:
+        return [f"unsupported pack {version}"]
+    if pack.get("schema") != PACK_VERSIONS[version]["schema"]:
         problems.append("schema")
     if not isinstance(cases, list):
         return ["cases"]
@@ -119,26 +114,68 @@ def validate_pack(pack: dict[str, Any]) -> list[str]:
         problems.append("missing negative control")
     for case in cases:
         problems.extend(_validate_case(case))
+        if version == "v2":
+            problems.extend(_namespace_leaks(case))
     if "quality_score" in pack or "overall_score" in pack:
         problems.append("pack collapses metrics")
     return problems
 
 
+def _namespace_leaks(case: dict[str, Any]) -> list[str]:
+    namespace = case.get("expected_namespace")
+    if not isinstance(namespace, str) or not namespace:
+        return []
+    problems: list[str] = []
+    if namespace in str(case.get("prompt") or ""):
+        problems.append(f"{case.get('id')} namespace is in the prompt")
+    files = (case.get("fixture") or {}).get("files") or {}
+    for relative, content in files.items():
+        if namespace in str(content):
+            problems.append(f"{case.get('id')} namespace is in {relative}")
+    return problems
+
+
 def check_pack(root: Path | None = None) -> dict[str, Any]:
     project_root = root or ROOT
-    freeze = verify_freeze(project_root)
-    pack = load_pack(project_root / "benchmark" / "lifecycle-activation-v1.json")
-    problems = [] if freeze["ok"] else ["freeze mismatch"]
-    problems.extend(validate_pack(pack))
-    problems.extend(score_embedded_probes(pack))
-    plan = render_host_plan(pack, "opencode", "known-project-gotcha")
-    if "opencode run" not in plan or "192.168." in plan:
+    problems: list[str] = []
+    freezes: dict[str, dict[str, Any]] = {}
+    packs: dict[str, dict[str, Any]] = {}
+    for version in ("v1", "v2"):
+        freeze = verify_freeze(project_root, version)
+        freezes[version] = freeze
+        if not freeze["ok"]:
+            problems.append(f"{version} freeze mismatch")
+            continue
+        pack = load_pack(project_root / PACK_VERSIONS[version]["pack"])
+        packs[version] = pack
+        problems.extend(f"{version}: {item}" for item in validate_pack(pack, version))
+        problems.extend(f"{version}: {item}" for item in score_embedded_probes(pack))
+    if "v2" in packs:
+        with tempfile.TemporaryDirectory(prefix="lifecycle-prepare-") as temporary:
+            prepared = prepare_governed_fixture(
+                next(case for case in packs["v2"]["cases"] if case["id"] == "known-project-gotcha"),
+                Path(temporary),
+                host="opencode",
+            )
+            command = prepared["command"]
+            if (
+                "<" in command
+                or ">" in command
+                or "opencode run" not in command
+                or "192.168." in command
+                or not prepared["fixture_repo"].joinpath(".git").exists()
+                or prepared["bound_repository_id"] != prepared["repository_id"]
+            ):
+                problems.append("opencode plan is not an isolated runnable path")
+    else:
         problems.append("opencode plan is not an isolated runnable path")
+    pack = packs.get("v1")
     return {
         "ok": not problems,
         "problems": problems,
-        "freeze": freeze,
-        "case_count": len(pack["cases"]),
+        "freeze": freezes.get("v1"),
+        "freezes": freezes,
+        "case_count": 0 if pack is None else len(pack["cases"]),
     }
 
 
@@ -180,168 +217,6 @@ def expand_probe(case: dict[str, Any], probe: dict[str, Any]) -> dict[str, Any]:
     return observation
 
 
-def score_pack(
-    pack: dict[str, Any],
-    observations: list[dict[str, Any]],
-    *,
-    freeze: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    by_case: dict[str, dict[str, Any]] = {}
-    for observation in observations:
-        case_id = observation.get("case_id")
-        if not isinstance(case_id, str) or case_id in by_case:
-            raise ValueError(f"observations need one object per case, got {case_id!r}")
-        by_case[case_id] = observation
-    results = []
-    for case in pack["cases"]:
-        observation = by_case.get(case["id"])
-        if observation is None:
-            results.append(_not_run(case))
-        else:
-            results.append(score_observation(case, observation))
-    lanes = host_lanes(observations)
-    metrics = build_metrics(results)
-    return {
-        "schema": REPORT_SCHEMA,
-        "freeze": freeze,
-        "host_lanes": lanes,
-        "instrument": instrument_checks(pack, lanes, freeze),
-        "metrics": metrics,
-        "results": results,
-    }
-
-
-def score_observation(case: dict[str, Any], observation: dict[str, Any]) -> dict[str, Any]:
-    base = _result_shell(case, observation)
-    if observation.get("schema") != OBSERVATION_SCHEMA or observation.get("case_id") != case["id"]:
-        return _conclude(base, "INCONCLUSIVE", ["invalid_observation"])
-    if observation.get("trace_complete") is not True:
-        return _conclude(base, "INCONCLUSIVE", ["trace_incomplete"])
-    available = observation.get("amb_available")
-    if available not in {True, False}:
-        return _conclude(base, "INCONCLUSIVE", ["availability_unknown"])
-    access = observation.get("fixture_access") if isinstance(observation.get("fixture_access"), dict) else {}
-    if access.get("direct_read") is True:
-        reasons = ["fixture_leak"]
-        reasons.extend(
-            f"fixture_leak:{signal}" for signal in access.get("signals") or [] if isinstance(signal, str) and signal
-        )
-        return _conclude(base, "INCONCLUSIVE", reasons)
-
-    mode = case["fixture"]["amb_mode"]
-    calls = [_normalize_call(call) for call in observation.get("tool_calls") or []]
-    recalls = [call for call in calls if call["tool"] == "recall"]
-    amb_calls = [call for call in calls if call["tool"] in AMB_TOOL_NAMES]
-    base["recall_calls"] = len(recalls)
-    base["amb_calls"] = len(amb_calls)
-    for call in recalls:
-        state = _classify_result(call, case)
-        base["result_states"].append(state)
-        if call["namespace"] == case.get("expected_namespace"):
-            base["namespace_results"].append("correct")
-        else:
-            base["namespace_results"].append("incorrect")
-
-    if mode == "available" and available is False:
-        return _conclude(base, "INCONCLUSIVE", ["precondition_not_met"])
-    if mode == "unavailable" and available is True and any(not call["is_error"] for call in recalls):
-        return _conclude(base, "INCONCLUSIVE", ["precondition_not_met"])
-
-    reasons = _decision_failures(case, observation, recalls, amb_calls, base)
-    reasons.extend(_text_failures(case, str(observation.get("final_text") or "")))
-    if case.get("repo_evidence_path") and "repo_paths_read" not in observation and not reasons:
-        return _conclude(base, "INCONCLUSIVE", ["repo_evidence_missing"])
-    if case.get("repo_evidence_path"):
-        reasons.extend(_repo_failures(case, observation))
-    extra = _extra_recalls(case, len(recalls))
-    base["repeated_recall_count"] = extra
-    base["pathological_recall"] = len(recalls) > int(case["max_recall_calls"])
-    if extra:
-        reasons.append("repeated_or_unnecessary_recall")
-    status = "FAIL" if reasons else "PASS"
-    return _conclude(base, status, reasons)
-
-
-def build_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "required_recall_hit_rate": _flag_rate(results, "must_recall", "required_recall_hit"),
-        "false_activation_rate": _flag_rate(results, None, "false_activation", negative_only=True),
-        "namespace_resolution_correct_rate": _namespace_rate(results),
-        "useful_hit_rate_given_recall": _useful_rate(results),
-        "no_hit_correct_rate": _status_rate(results, "must_recall_then_no_hit"),
-        "unavailable_vs_empty_correct_rate": _status_rate(results, "recall_or_report_unavailable"),
-        "stale_memory_misuse_count": sum(1 for result in results if result["stale_misuse"] is True),
-        "repeated_or_unnecessary_recall_count": sum(result["repeated_recall_count"] for result in results),
-        "overhead": [
-            {
-                "id": result["id"],
-                "status": result["status"],
-                "latency_ms": result["latency_ms"],
-                "recall_calls": result["recall_calls"],
-                "input_tokens": result["input_tokens"],
-                "output_tokens": result["output_tokens"],
-                "pathological_recall": result["pathological_recall"],
-            }
-            for result in results
-        ],
-    }
-
-
-def host_lanes(observations: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    lanes = {
-        "codex": {
-            "status": "NOT_RUN",
-            "execution_kind": None,
-            "case_ids": [],
-            "contaminated_case_ids": [],
-            "runnable_path": "python ./scripts/run_lifecycle_activation_benchmark.py collect-codex --case-id known-project-gotcha",
-        },
-        "opencode": {
-            "status": "NOT_RUN",
-            "execution_kind": None,
-            "case_ids": [],
-            "contaminated_case_ids": [],
-            "runnable_path": "python ./scripts/run_lifecycle_activation_benchmark.py print-host-plan --host opencode --case-id known-project-gotcha",
-        },
-    }
-    for observation in observations:
-        host = str((observation.get("host") or {}).get("id") or "")
-        if host not in lanes:
-            continue
-        if observation.get("execution_kind") != "live" or observation.get("trace_complete") is not True:
-            continue
-        access = observation.get("fixture_access") if isinstance(observation.get("fixture_access"), dict) else {}
-        if access.get("direct_read") is True:
-            lanes[host]["contaminated_case_ids"].append(observation.get("case_id"))
-            if lanes[host]["status"] != "SCORED":
-                lanes[host]["status"] = "INCONCLUSIVE"
-                lanes[host]["execution_kind"] = "live"
-            continue
-        lanes[host]["status"] = "SCORED"
-        lanes[host]["execution_kind"] = "live"
-        lanes[host]["case_ids"].append(observation.get("case_id"))
-    return lanes
-
-
-def instrument_checks(
-    pack: dict[str, Any],
-    lanes: dict[str, dict[str, Any]],
-    freeze: dict[str, Any] | None,
-) -> dict[str, Any]:
-    ids = [case["id"] for case in pack["cases"]]
-    opencode = lanes["opencode"]
-    checks = {
-        "freeze_verified": bool(freeze and freeze.get("ok")),
-        "required_scenarios_present": tuple(ids) == REQUIRED_CASE_IDS,
-        "negative_controls_present": sum(case["class"] == "negative_control" for case in pack["cases"]) >= 2,
-        "metrics_not_collapsed": True,
-        "codex_live_trace": lanes["codex"]["status"] == "SCORED",
-        "opencode_explicit": opencode["status"] == "SCORED"
-        or (opencode["status"] == "NOT_RUN" and bool(opencode["runnable_path"])),
-    }
-    return {"checks": checks, "pass": all(checks.values())}
-
-
 def render_text(report: dict[str, Any]) -> str:
     metrics = report["metrics"]
     lines = [
@@ -367,7 +242,9 @@ def render_text(report: dict[str, Any]) -> str:
     lines.append(f"stale_memory_misuse_count={metrics['stale_memory_misuse_count']}")
     lines.append(f"repeated_or_unnecessary_recall_count={metrics['repeated_or_unnecessary_recall_count']}")
     for result in report["results"]:
-        lines.append(f"{result['id']} {result['status']} {','.join(result['reasons'])}")
+        condition = result.get("condition")
+        condition_label = f" {condition}" if isinstance(condition, str) and condition else ""
+        lines.append(f"{result['id']} {result['status']}{condition_label} {','.join(result['reasons'])}")
     return "\n".join(lines) + "\n"
 
 
@@ -454,24 +331,27 @@ def build_codex_collect_argv(
     prompt: str,
     codex_bin: str = "codex",
     config_overrides: list[str] | None = None,
+    condition: str = "plain_mcp_baseline",
 ) -> list[str]:
     if sandbox not in {"read-only", "workspace-write"}:
         raise ValueError(f"unsupported sandbox {sandbox}")
+    if condition not in {"plain_mcp_baseline", "adapter_enabled"}:
+        raise ValueError(f"unsupported collector condition {condition}")
     argv = [codex_bin, "exec"]
     for override in config_overrides or []:
         if ":58080" in override or "--add-dir" in override or "fixture-store.sqlite" in override:
             raise ValueError("collector override points at production AMB or the fixture store")
         argv.extend(["-c", override])
+    mode_flags = ["--disable", "plugins", "--disable", "memories"]
+    if condition == "adapter_enabled":
+        mode_flags = ["--dangerously-bypass-hook-trust", "--disable", "memories"]
     argv.extend(
         [
             "--json",
             "--ephemeral",
             "--skip-git-repo-check",
             "--ignore-rules",
-            "--disable",
-            "plugins",
-            "--disable",
-            "memories",
+            *mode_flags,
             "-s",
             sandbox,
             "-C",
@@ -591,7 +471,7 @@ def build_allowlisted_filesystem_argv(
     return argv
 
 
-def render_collector_codex_preamble(*, catalog_path: str, fixture_repo: str) -> str:
+def render_collector_codex_preamble(*, catalog_path: str, fixture_repo: str, plugins: bool = False) -> str:
     """Codex config that loads only the isolated MCP stanza appended by the caller."""
     lines = [
         'model_provider = "local"',
@@ -612,7 +492,7 @@ def render_collector_codex_preamble(*, catalog_path: str, fixture_repo: str) -> 
         "]",
         "",
         "[features]",
-        "plugins = false",
+        "plugins = true" if plugins else "plugins = false",
         "memories = false",
         "",
         f"[projects.{_quote_toml_basic(fixture_repo)}]",
@@ -652,15 +532,150 @@ def prepare_collector_layout(*, store_root: Path, client_root: Path, workspace_r
     }
 
 
+def render_opencode_command(
+    *,
+    fixture_repo: Path,
+    bridge_home: Path,
+    prompt_path: Path,
+    source_root: Path,
+    model: str,
+) -> str:
+    """Concrete OpenCode command. Placeholders are rejected by check."""
+    command = " ".join(
+        [
+            "env",
+            f"AGENT_MEMORY_BRIDGE_HOME={shlex.quote(str(bridge_home))}",
+            f"PYTHONPATH={shlex.quote(str(source_root))}",
+            "opencode",
+            "run",
+            "--format",
+            "json",
+            "--pure",
+            "--dir",
+            shlex.quote(str(fixture_repo)),
+            "--model",
+            shlex.quote(model),
+            "--",
+            f"$(cat {shlex.quote(str(prompt_path))})",
+        ]
+    )
+    if "<" in command or ">" in command or "192.168." in command or ":58080" in command:
+        raise RuntimeError("opencode command contains a placeholder or production route")
+    return command
+
+
+def git_commit_fixture(checkout: Path) -> None:
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_AUTHOR_NAME": "Fixture",
+            "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+            "GIT_COMMITTER_NAME": "Fixture",
+            "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+        }
+    )
+
+    def run(*args: str) -> None:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=checkout,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(detail or "git fixture setup failed")
+
+    run("init", "-b", "main")
+    run("add", "-A")
+    run(
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "fixture checkout",
+    )
+
+
+def bind_fixture_namespace(case: dict[str, Any], checkout: Path, bridge_home: Path) -> str:
+    from agent_mem_bridge.repository_snapshot_store import RepositorySnapshotStore, repository_identity
+
+    identity = repository_identity(checkout)
+    repository_id = str(identity["repository_id"])
+    bridge_home.mkdir(parents=True, exist_ok=True)
+    (bridge_home / "config.toml").write_text('[bridge]\ndb_path = "fixture-store.sqlite"\n', encoding="utf-8")
+    if case["fixture"]["amb_mode"] == "available":
+        from tools.evidence._temporary_store import ScopedTemporaryMemoryStore
+
+        store = ScopedTemporaryMemoryStore(bridge_home / "fixture-store.sqlite", bridge_home / "logs")
+        try:
+            seed_case_memories(store, case)
+        finally:
+            store.close()
+    binding = RepositorySnapshotStore(bridge_home / "repository").bind_namespace(
+        str(case["expected_namespace"]),
+        repository_id,
+    )
+    if binding["repository_id"] != repository_id:
+        raise RuntimeError("fixture binding did not keep the checkout repository id")
+    return repository_id
+
+
+def prepare_governed_fixture(
+    case: dict[str, Any],
+    dest: Path,
+    *,
+    host: str,
+    model: str = "grok-4.7-build-fast",
+    source_root: Path | None = None,
+) -> dict[str, Any]:
+    if host != "opencode":
+        raise ValueError(f"unsupported prepare host {host}")
+    destination = dest.resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    checkout = destination / "checkout"
+    bridge_home = destination / "bridge"
+    materialize_fixture(case, checkout)
+    git_commit_fixture(checkout)
+    repository_id = bind_fixture_namespace(case, checkout, bridge_home)
+    prompt_path = destination / "prompt.txt"
+    prompt_path.write_text(str(case["prompt"]), encoding="utf-8")
+    command = render_opencode_command(
+        fixture_repo=checkout,
+        bridge_home=bridge_home,
+        prompt_path=prompt_path,
+        source_root=(source_root or (ROOT / "src")).resolve(),
+        model=model,
+    )
+    (destination / "command.txt").write_text(command + "\n", encoding="utf-8")
+    return {
+        "command": command,
+        "fixture_repo": checkout,
+        "bridge_home": bridge_home,
+        "repository_id": repository_id,
+        "bound_repository_id": repository_id,
+        "prompt_path": prompt_path,
+    }
+
+
 def render_host_plan(pack: dict[str, Any], host: str, case_id: str) -> str:
     case = next(item for item in pack["cases"] if item["id"] == case_id)
     if host == "codex":
         command = (
             "python ./scripts/run_lifecycle_activation_benchmark.py collect-codex "
-            "--case-id <case-id> --out <temp-dir-outside-the-fixture>"
+            f"--case-id {case['id']} --pack v1 --condition plain_mcp_baseline"
         )
     elif host == "opencode":
-        command = "opencode run --format json --pure --dir <fixture-repo> --model <recorded-model> -- <frozen-prompt>"
+        command = (
+            "python ./scripts/run_lifecycle_activation_benchmark.py prepare-host "
+            f"--host opencode --case-id {case['id']} --pack v2"
+        )
     else:
         raise ValueError(f"unsupported host {host}")
     return "\n".join(
@@ -684,6 +699,7 @@ def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None
     commands: list[dict[str, str]] = []
     usage: dict[str, Any] = {}
     events = 0
+    terminal_event = None
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -695,6 +711,8 @@ def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None
         if not isinstance(event, dict):
             continue
         events += 1
+        if isinstance(event.get("type"), str):
+            terminal_event = str(event["type"])
         item = event.get("item") if isinstance(event.get("item"), dict) else event
         if not isinstance(item, dict):
             continue
@@ -725,6 +743,7 @@ def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None
         "repo_paths_read": list(dict.fromkeys(repo_paths)),
         "input_tokens": usage.get("input_tokens"),
         "output_tokens": usage.get("output_tokens"),
+        "terminal_event": terminal_event,
     }
 
 
@@ -752,285 +771,6 @@ def _validate_case(case: dict[str, Any]) -> list[str]:
         if stale not in memories or stale in file_text or stale in prompt:
             problems.append(f"{case_id} stale marker is not memory-only")
     return problems
-
-
-def _decision_failures(
-    case: dict[str, Any],
-    observation: dict[str, Any],
-    recalls: list[dict[str, Any]],
-    amb_calls: list[dict[str, Any]],
-    base: dict[str, Any],
-) -> list[str]:
-    decision = case["expected_decision"]
-    expected_ns = case.get("expected_namespace")
-    reasons: list[str] = []
-    matching = [call for call in recalls if call["namespace"] == expected_ns]
-    if decision == "must_recall":
-        base["required_recall_hit"] = bool(recalls)
-        if not matching:
-            reasons.append("required_recall_miss" if not recalls else "namespace_miss")
-        elif not any(_classify_result(call, case) == "useful_hit" for call in matching):
-            reasons.append("useful_hit_miss")
-    elif decision == "recall_and_reconcile":
-        base["required_recall_hit"] = bool(recalls)
-        stale = case.get("stale_marker") or ""
-        current = case.get("current_marker") or ""
-        final = str(observation.get("final_text") or "")
-        base["stale_misuse"] = bool(stale and stale in final)
-        if not matching:
-            reasons.append("required_recall_miss" if not recalls else "namespace_miss")
-        elif not any(_classify_result(call, case) == "useful_hit" for call in matching):
-            reasons.append("useful_hit_miss")
-        if current and current not in final:
-            reasons.append("current_evidence_not_used")
-        if base["stale_misuse"]:
-            reasons.append("stale_misuse")
-    elif decision == "must_recall_then_no_hit":
-        base["required_recall_hit"] = bool(recalls)
-        if not matching:
-            reasons.append("required_recall_miss" if not recalls else "namespace_miss")
-            base["no_hit_correct"] = False
-        else:
-            states = [_classify_result(call, case) for call in matching]
-            base["no_hit_correct"] = states == ["no_hit"] or (states and all(state == "no_hit" for state in states))
-            if any(call["is_error"] for call in matching):
-                reasons.append("unavailable_treated_as_empty")
-                base["no_hit_correct"] = False
-            elif not base["no_hit_correct"]:
-                reasons.append("no_hit_mismatch")
-    elif decision == "recall_or_report_unavailable":
-        successful = [call for call in recalls if not call["is_error"]]
-        discriminated = not successful
-        base["unavailable_discriminated"] = discriminated
-        if successful:
-            reasons.append("unavailable_treated_as_empty")
-            base["unavailable_discriminated"] = False
-    elif decision in {"do_not_recall", "do_not_repeat"}:
-        activated = bool(amb_calls)
-        base["false_activation"] = activated
-        if activated:
-            reasons.append("false_activation" if decision == "do_not_recall" else "repeated_or_unnecessary_recall")
-    else:
-        reasons.append("unknown_decision")
-    return reasons
-
-
-def _text_failures(case: dict[str, Any], final: str) -> list[str]:
-    reasons: list[str] = []
-    for marker in case.get("final_text_must_include") or []:
-        if marker not in final:
-            reasons.append(f"missing_required_text:{marker}")
-    for marker in case.get("final_text_must_not_include") or []:
-        if marker and marker in final:
-            reasons.append(f"forbidden_text:{marker}")
-    options = case.get("final_text_must_match_any") or []
-    if options and not any(option.casefold() in final.casefold() for option in options):
-        reasons.append("missing_status_phrase")
-    return reasons
-
-
-def _repo_failures(case: dict[str, Any], observation: dict[str, Any]) -> list[str]:
-    if "repo_paths_read" not in observation:
-        return ["repo_evidence_missing"]
-    required = str(case["repo_evidence_path"])
-    paths = observation.get("repo_paths_read") or []
-    if not isinstance(paths, list) or not _saw_path([str(path) for path in paths], required):
-        return ["repo_evidence_missing"]
-    return []
-
-
-def _extra_recalls(case: dict[str, Any], recall_count: int) -> int:
-    allowed = int(case["max_recall_calls"])
-    if case["expected_decision"] in {"do_not_recall", "do_not_repeat"}:
-        return recall_count
-    return max(0, recall_count - allowed)
-
-
-def _classify_result(call: dict[str, Any], case: dict[str, Any]) -> str:
-    if call["is_error"]:
-        return "unavailable"
-    text = call["result_text"]
-    count = call.get("result_count")
-    if count == 0 or (count is None and not text.strip()):
-        return "no_hit"
-    useful = case.get("useful_marker") or ""
-    distractor = case.get("distractor_marker") or ""
-    if useful and useful in text:
-        return "useful_hit"
-    if text.strip() or (distractor and distractor in text):
-        return "irrelevant_hit"
-    return "no_hit"
-
-
-def _normalize_call(call: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "tool": _normalize_tool_name(str(call.get("tool") or "")),
-        "namespace": str(call.get("namespace") or ""),
-        "is_error": bool(call.get("is_error")),
-        "result_text": str(call.get("result_text") or ""),
-        "result_count": call.get("result_count"),
-        "elapsed_ms": call.get("elapsed_ms"),
-    }
-
-
-def _normalize_tool_name(name: str) -> str:
-    leaf = name.strip().replace("/", ".").split(".")[-1]
-    if "__" in leaf:
-        leaf = leaf.split("__")[-1]
-    return leaf
-
-
-def _saw_path(paths: list[str], required: str) -> bool:
-    needle = required.replace("\\", "/").lstrip("./")
-    for path in paths:
-        cleaned = path.replace("\\", "/").lstrip("./")
-        if cleaned == needle or cleaned.endswith("/" + needle):
-            return True
-    return False
-
-
-def _result_shell(case: dict[str, Any], observation: dict[str, Any] | None) -> dict[str, Any]:
-    host = (observation or {}).get("host") or {}
-    return {
-        "id": case["id"],
-        "scenario": case["scenario"],
-        "class": case["class"],
-        "expected_decision": case["expected_decision"],
-        "status": "INCONCLUSIVE",
-        "reasons": [],
-        "recall_calls": 0,
-        "amb_calls": 0,
-        "namespace_results": [],
-        "result_states": [],
-        "required_recall_hit": None,
-        "false_activation": None,
-        "no_hit_correct": None,
-        "unavailable_discriminated": None,
-        "stale_misuse": None,
-        "repeated_recall_count": 0,
-        "pathological_recall": False,
-        "latency_ms": None if observation is None else observation.get("latency_ms"),
-        "input_tokens": None if observation is None else observation.get("input_tokens"),
-        "output_tokens": None if observation is None else observation.get("output_tokens"),
-        "execution_kind": None if observation is None else observation.get("execution_kind"),
-        "host_id": host.get("id"),
-    }
-
-
-def _not_run(case: dict[str, Any]) -> dict[str, Any]:
-    result = _result_shell(case, None)
-    result["status"] = "NOT_RUN"
-    result["reasons"] = ["observation_missing"]
-    return result
-
-
-def _conclude(result: dict[str, Any], status: str, reasons: list[str]) -> dict[str, Any]:
-    result["status"] = status
-    result["reasons"] = list(dict.fromkeys(reasons))
-    decision = result["expected_decision"]
-    if status == "INCONCLUSIVE":
-        result["required_recall_hit"] = None
-        result["false_activation"] = None
-        result["no_hit_correct"] = None
-        result["unavailable_discriminated"] = None
-        result["stale_misuse"] = None
-    elif decision == "must_recall_then_no_hit" and result["no_hit_correct"] is None:
-        result["no_hit_correct"] = status == "PASS"
-    elif decision == "recall_or_report_unavailable" and result["unavailable_discriminated"] is None:
-        result["unavailable_discriminated"] = status == "PASS"
-    return result
-
-
-def _flag_rate(
-    results: list[dict[str, Any]],
-    decision: str | None,
-    flag: str,
-    *,
-    negative_only: bool = False,
-) -> dict[str, Any]:
-    selected = []
-    for result in results:
-        if decision is not None and result["expected_decision"] != decision:
-            continue
-        if negative_only and result["class"] != "negative_control":
-            continue
-        selected.append(result)
-    passed = sum(result[flag] is True for result in selected)
-    failed = sum(result[flag] is False for result in selected)
-    inconclusive = sum(result["status"] == "INCONCLUSIVE" for result in selected)
-    not_run = sum(result["status"] == "NOT_RUN" for result in selected)
-    denominator = passed + failed
-    return {
-        "numerator": passed,
-        "complement": failed,
-        "inconclusive": inconclusive,
-        "not_run": not_run,
-        "rate": None if denominator == 0 else passed / denominator,
-    }
-
-
-def _status_rate(results: list[dict[str, Any]], decision: str) -> dict[str, Any]:
-    selected = [result for result in results if result["expected_decision"] == decision]
-    passed = sum(result["status"] == "PASS" for result in selected)
-    failed = sum(result["status"] == "FAIL" for result in selected)
-    inconclusive = sum(result["status"] == "INCONCLUSIVE" for result in selected)
-    not_run = sum(result["status"] == "NOT_RUN" for result in selected)
-    denominator = passed + failed
-    return {
-        "numerator": passed,
-        "complement": failed,
-        "inconclusive": inconclusive,
-        "not_run": not_run,
-        "rate": None if denominator == 0 else passed / denominator,
-    }
-
-
-def _namespace_rate(results: list[dict[str, Any]]) -> dict[str, Any]:
-    correct = 0
-    incorrect = 0
-    inconclusive = 0
-    not_run = 0
-    for result in results:
-        if result["status"] == "INCONCLUSIVE":
-            inconclusive += 1
-        elif result["status"] == "NOT_RUN":
-            not_run += 1
-        else:
-            correct += sum(item == "correct" for item in result["namespace_results"])
-            incorrect += sum(item == "incorrect" for item in result["namespace_results"])
-    denominator = correct + incorrect
-    return {
-        "numerator": correct,
-        "complement": incorrect,
-        "inconclusive": inconclusive,
-        "not_run": not_run,
-        "rate": None if denominator == 0 else correct / denominator,
-    }
-
-
-def _useful_rate(results: list[dict[str, Any]]) -> dict[str, Any]:
-    useful = 0
-    other = 0
-    inconclusive = 0
-    not_run = 0
-    for result in results:
-        if result["expected_decision"] not in {"must_recall", "recall_and_reconcile"}:
-            continue
-        if result["status"] == "INCONCLUSIVE":
-            inconclusive += 1
-        elif result["status"] == "NOT_RUN":
-            not_run += 1
-        else:
-            useful += sum(state == "useful_hit" for state in result["result_states"])
-            other += sum(state != "useful_hit" for state in result["result_states"])
-    denominator = useful + other
-    return {
-        "numerator": useful,
-        "complement": other,
-        "inconclusive": inconclusive,
-        "not_run": not_run,
-        "rate": None if denominator == 0 else useful / denominator,
-    }
 
 
 def _tool_call_from_event(item: dict[str, Any]) -> dict[str, Any]:

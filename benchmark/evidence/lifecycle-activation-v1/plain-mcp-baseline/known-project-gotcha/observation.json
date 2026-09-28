@@ -1,0 +1,40 @@
+{
+  "schema": "amb.lifecycle-activation-observation.v1",
+  "case_id": "known-project-gotcha",
+  "trace_complete": true,
+  "execution_kind": "live",
+  "host": {
+    "id": "codex",
+    "version": "codex-cli 0.157.1",
+    "model": "grok-4.7-build-fast"
+  },
+  "amb_available": true,
+  "namespace_bound": "project:lifecycle-fixture",
+  "tool_calls": [
+    {
+      "tool": "list_mcp_resources",
+      "namespace": "",
+      "is_error": false,
+      "result_text": "{\"resources\":[]}",
+      "result_count": null,
+      "elapsed_ms": null
+    }
+  ],
+  "final_text": "I'll look through the fixture project for the token that has to be returned before the benchmark report is refreshed.\nThere is no gotcha token in this fixture. The only file under the checkout is `scripts/refresh_report.py`, and its sole content is the comment \u201cWrite the report to the path you were given.\u201d No token, path, or report content is defined anywhere in the workspace, so nothing was written.",
+  "repo_paths_read": [
+    "scripts/refresh_report.py"
+  ],
+  "fixture_access": {
+    "direct_read": false,
+    "signals": [],
+    "command_count": 5
+  },
+  "latency_ms": 13782.018,
+  "input_tokens": 46639,
+  "output_tokens": 1078,
+  "collector_exit_code": 0,
+  "freeze_sha256": {
+    "benchmark/lifecycle-activation-v1.json": "501e7ad4cfaf91496f5f39878c88cecb659967b33ec7ff1470bee92340748e03",
+    "benchmark/lifecycle-activation-v1.md": "127befea32b094b969510b8accbf315b7ebab91121d1ede20666d17e8703f2b3"
+  }
+}
