@@ -477,12 +477,24 @@ Use the same interpreter that has the package installed, and replace `python3`
 or `py -3` in the hook command when the default interpreter does not.
 
 Codex can call that entrypoint from `adapters/codex/hooks/hooks.json` on session
-start, prompt submission, and compaction. Review and trust the hook before
-Codex runs it. The Codex command timeout is 10 seconds. Session start resolves
-the bound project and does not dump memory. A material task may recall once.
-A typo or a merely optional design alternative does not. An exact repeat of
-that same prompt does not recall again. A reworded question can still recall;
+start, prompt submission, compaction, and turn stop. Review and trust the hook
+before Codex runs it. The Codex command timeout is 10 seconds. Session start
+resolves the bound project and does not dump memory. A material task may recall
+once. A typo or a merely optional design alternative does not. An exact repeat
+of that same prompt does not recall again. A reworded question can still recall;
 this adapter does not yet judge that two prompts are the same material need.
+
+Codex `Stop` is the only capture connection. It may store one hidden
+`needs_review` candidate when `last_assistant_message` is already one
+`memory.visible_artifact.v1` object. It does not read `transcript_path`,
+summarize the turn, or promote the candidate. `PreCompact` stays continuity-only
+for that reason. A missing project binding, a remote authority, or an ordinary
+assistant message produces no candidate.
+
+The [write-side capture check](WRITE-SIDE-CAPTURE.md#live-host-check) passed
+Codex Stop positive and negative lanes with invocation-inline hooks on CLI
+0.157.1. This does not establish plugin/project-file discovery or read-side
+activation acceptance.
 
 The OpenCode plugin at `adapters/opencode/amb-lifecycle.js` uses the same
 entrypoint for session start and compaction. `session.created` reads
@@ -493,9 +505,10 @@ Do not bind a message-updated event for this purpose.
 
 The adapter reads project scope through the governed project resolver. It does
 not create a namespace, rebind a project, or accept a caller-supplied namespace
-as authority. It does not add an MCP tool, write durable memory, or store
-prompts, transcripts, or hidden reasoning. Activation evidence is a derived
-local decision log.
+as authority. It does not add an MCP tool or store prompts, transcripts, or
+hidden reasoning. Ordinary durable memory is not written by recall. The only
+write is the hidden Codex Stop candidate described above, and only for a local
+authority. Activation evidence is a derived local decision log.
 
 Recall uses the selected authority. Set
 `AGENT_MEMORY_BRIDGE_AUTHORITY_URL`, or `[deployment].authority_url` in the

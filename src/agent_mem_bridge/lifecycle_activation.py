@@ -2,12 +2,17 @@
 
 The adapter consumes the governed project resolver, applies the bounded
 activation policy, and makes at most one recall. It does not create bindings,
-write durable memory, read transcripts, or accept caller-declared scope.
+read transcripts, or accept caller-declared scope.
+
+Codex Stop is the only write path. It may store one hidden review candidate
+when that hook already carries one structured visible artifact. It does not
+summarize prose, and it does not promote the candidate into ordinary memory.
 """
 
 from __future__ import annotations
 
 import asyncio
+import gc
 import hashlib
 import json
 import os
@@ -156,7 +161,10 @@ def codex_hooks_document() -> dict[str, Any]:
         "additionalContextLimit": 1200,
     }
     return {
-        "description": ("Optional AMB lifecycle activation. Success is a hook decision, not an AGENTS.md export."),
+        "description": (
+            "Optional AMB lifecycle activation. Success is a hook decision, not an AGENTS.md export. "
+            "Codex Stop may store one hidden review candidate from an already structured visible artifact."
+        ),
         "hooks": {
             "SessionStart": [
                 {
@@ -171,6 +179,7 @@ def codex_hooks_document() -> dict[str, Any]:
                     "hooks": [handler],
                 }
             ],
+            "Stop": [{"hooks": [handler]}],
         },
     }
 
@@ -184,6 +193,12 @@ def run_hook_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
     observation = activate(payload)
     _append_evidence(observation)
+    if observation.host == "codex" and observation.hook_event_name == "Stop":
+        capture = _capture_codex_stop(payload, observation)
+        path = resolve_bridge_home() / "lifecycle" / "capture-evidence.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(capture, sort_keys=True) + "\n")
     return render_hook_response(payload, observation)
 
 
@@ -328,6 +343,120 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
         error_type=error_type,
         context=context[:_CONTEXT_LIMIT],
     )
+
+
+_STOP_ARTIFACT_LIMIT = 4000
+_VISIBLE_ARTIFACT_SCHEMA = "memory.visible_artifact.v1"
+_PROVENANCE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+
+
+def _capture_codex_stop(payload: Mapping[str, Any], observation: ActivationObservation) -> dict[str, Any]:
+    """Store one hidden candidate from a Codex Stop artifact, or leave the lane untouched.
+
+    PreCompact is intentionally not handled here. That event exposes an unstable
+    transcript path, not a bounded visible artifact, and this function never reads it.
+    """
+
+    receipt: dict[str, Any] = {
+        "schema": "amb.codex-stop-capture-evidence.v1",
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "hook_event_name": "Stop",
+        "session_id": _provenance_token(_text(payload.get("session_id")), "session"),
+        "turn_id": _provenance_token(_text(payload.get("turn_id")), "turn"),
+        "disposition": "no_capture",
+        "reason": "no_bounded_artifact",
+        "writes": 0,
+        "record_ids": [],
+        "automatic_promotion": False,
+    }
+    if observation.resolution_status != "bound" or not isinstance(observation.namespace, str):
+        return {**receipt, "reason": "unbound_or_ambiguous_scope"}
+    if observation.authority_mode != "local" or observation.availability != "available":
+        return {**receipt, "reason": "local_authority_not_selected"}
+    event = _codex_stop_capture_event(payload, namespace=observation.namespace)
+    if event is None:
+        return receipt
+    from .storage import MemoryStore
+    from .write_side_capture import capture_at_boundary
+
+    try:
+        store = MemoryStore(db_path=resolve_bridge_db_path(), log_dir=resolve_bridge_log_dir())
+        result = capture_at_boundary(store, "post_run", event)
+        del store
+    except Exception as exc:  # A failed capture is not a successful zero-write control.
+        return {
+            **receipt,
+            "disposition": "error",
+            "reason": type(exc).__name__,
+            "writes": None,
+            "automatic_promotion": None,
+        }
+    finally:
+        # Windows cannot delete the database until SQLite connections are collected.
+        gc.collect()
+    return {
+        **receipt,
+        "disposition": result["disposition"],
+        "reason": "capture_policy_evaluated",
+        "writes": result["writes"],
+        "automatic_promotion": result["automatic_promotion"],
+        "record_ids": [item["record_id"] for item in result["items"] if item.get("record_id")],
+        "artifact_sha256": hashlib.sha256(payload["last_assistant_message"].encode("utf-8")).hexdigest(),
+    }
+
+
+def _codex_stop_capture_event(payload: Mapping[str, Any], *, namespace: str) -> dict[str, Any] | None:
+    artifact = _codex_stop_visible_artifact(payload)
+    if artifact is None:
+        return None
+    session_id = _provenance_token(_text(payload.get("session_id")), "session")
+    task_id = _provenance_token(_text(payload.get("turn_id")), "turn")
+    if session_id is None or task_id is None:
+        return None
+    # Host-owned reference binds the claim to the exact visible message, not a
+    # caller-invented evidence location. Session and turn are stored separately.
+    digest = hashlib.sha256(payload["last_assistant_message"].encode("utf-8")).hexdigest()
+    artifact["evidence_refs"] = [f"codex-stop:sha256:{digest}"]
+    return {
+        "schema": "memory.lifecycle_capture_event.v1",
+        "boundary": "post_run",
+        "namespace": namespace,
+        "source_runtime": "codex",
+        "source_session_id": session_id,
+        "source_task_id": task_id,
+        "visible_artifacts": [artifact],
+    }
+
+
+def _codex_stop_visible_artifact(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    message = payload.get("last_assistant_message")
+    if not isinstance(message, str) or len(message) > _STOP_ARTIFACT_LIMIT:
+        return None
+    try:
+        if len(message.encode("utf-8")) > _STOP_ARTIFACT_LIMIT:
+            return None
+    except UnicodeEncodeError:
+        return None
+    stripped = message.strip()
+    if len(stripped) < 2 or not stripped.startswith("{") or not stripped.endswith("}"):
+        return None
+    try:
+        parsed = json.loads(stripped)
+    except (json.JSONDecodeError, RecursionError):
+        return None
+    if not isinstance(parsed, dict) or _text(parsed.get("schema")) != _VISIBLE_ARTIFACT_SCHEMA:
+        return None
+    return {str(key): value for key, value in parsed.items()}
+
+
+def _provenance_token(value: str, prefix: str) -> str | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if _PROVENANCE_TOKEN_RE.fullmatch(cleaned):
+        return cleaned
+    digest = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()[:32]
+    return f"{prefix}.{digest}"
 
 
 def resolve_project_scope(cwd: str, provenance: Mapping[str, Any] | None = None) -> dict[str, Any]:
