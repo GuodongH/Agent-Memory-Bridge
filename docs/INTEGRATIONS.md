@@ -497,14 +497,19 @@ as authority. It does not add an MCP tool, write durable memory, or store
 prompts, transcripts, or hidden reasoning. Activation evidence is a derived
 local decision log.
 
-Recall in this version opens a local SQLite file only. Set
+Recall uses the selected authority. Set
 `AGENT_MEMORY_BRIDGE_AUTHORITY_URL`, or `[deployment].authority_url` in the
 bridge config, when the canonical authority is a remote Streamable HTTP server.
-The hook then refuses to open a local database and reports
-`adapter_backend_unsupported`. A missing local database is `unknown`. Neither
-state means "AMB is unavailable" or "memory had no hit". This version does not
-call the remote authority. A live host session is not claimed by these
-repository checks.
+The hook then calls the existing MCP `recall` tool over HTTP, with the locally
+resolved namespace and a three-record limit. It never opens a local database or
+falls back to one. Set `AGENT_MEMORY_BRIDGE_HTTP_TOKEN_FILE` to a private bearer
+token file when authentication is required. Protect traffic with TLS or a tunnel.
+The HTTP operation has a five-second deadline and does not retry recall.
+Transport, authentication, tool and malformed-result failures produce `error`,
+not `no_hit`; the host continues without recalled memory. Skipped events make
+no network calls and remote availability remains `unknown` until a recall.
+Without a remote URL the existing local path is unchanged; a missing local
+database is `unknown`. Repository tests are not live Codex host acceptance.
 
 ## Hermes
 

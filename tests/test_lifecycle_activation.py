@@ -3,10 +3,17 @@ from __future__ import annotations
 import io
 import json
 import os
+import socket
 import sqlite3
 import subprocess
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
+
+import pytest
+import uvicorn
 
 from agent_mem_bridge.cli import main
 from agent_mem_bridge.lifecycle_activation import (
@@ -41,6 +48,8 @@ def make_repo(parent: Path) -> Path:
 
 
 def isolate(tmp_path: Path, monkeypatch) -> Path:
+    monkeypatch.delenv("AGENT_MEMORY_BRIDGE_AUTHORITY_URL", raising=False)
+    monkeypatch.delenv("AGENT_MEMORY_BRIDGE_HTTP_TOKEN_FILE", raising=False)
     home = tmp_path / "amb-home"
     home.mkdir(parents=True)
     (home / "config.toml").write_text("", encoding="utf-8")
@@ -294,42 +303,133 @@ def test_missing_local_database_is_not_reported_as_amb_unavailable(tmp_path: Pat
     assert "no matching memory" not in context
 
 
-def test_remote_authority_does_not_open_a_stale_local_database(tmp_path: Path, monkeypatch) -> None:
+@contextmanager
+def remote_authority(tmp_path: Path, monkeypatch, *, token_file=None):
+    from agent_mem_bridge.deployment_config import HttpTransportConfig
+    from agent_mem_bridge.http_transport import build_http_app
+
+    store = MemoryStore(tmp_path / "remote.db", log_dir=tmp_path / "remote-logs")
+    calls = []
+    original = store.recall
+
+    def observed(**kwargs):
+        calls.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "recall", observed)
+    app = build_http_app(HttpTransportConfig(token_file=token_file), store=store, readiness_db_path=store.db_path)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        server = uvicorn.Server(uvicorn.Config(app, log_level="critical", access_log=False))
+        thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+        thread.start()
+        try:
+            deadline = time.monotonic() + 10
+            while not server.started and thread.is_alive() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert server.started
+            yield f"http://127.0.0.1:{port}/mcp", store, calls
+        finally:
+            server.should_exit = True
+            thread.join(10)
+            assert not thread.is_alive()
+
+
+@pytest.mark.parametrize("configured_by", ["env", "config"])
+@pytest.mark.parametrize("scenario", ["hit", "no_hit", "skip", "unavailable", "irrelevant_hit", "stale_conflict"])
+def test_remote_authority_does_not_open_a_stale_local_database(
+    tmp_path: Path, monkeypatch, configured_by, scenario
+) -> None:
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
-    remember(home, "project:fixture", MEMORY)
-    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_AUTHORITY_URL", "https://amb.example/mcp")
+    trap = "Prior decision: replace the run ledger schema with CONFLICTING-LOCAL-TRAP."
+    remember(home, "project:fixture", trap)
+    attempts = []
+    original_connect = sqlite3.connect
 
-    def fail_if_opened(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("local database opened despite a remote authority")
+    def guarded_connect(database, *args, **kwargs):
+        if str(home / "bridge.db") in str(database):
+            attempts.append(str(database))
+            raise AssertionError("local database opened despite remote selection")
+        return original_connect(database, *args, **kwargs)
 
-    monkeypatch.setattr("agent_mem_bridge.storage.MemoryStore", fail_if_opened)
-    response = run_hook_payload(task_payload(repo, MATERIAL, session_id="remote-session"))
-    row = evidence_rows(home)[-1]
-    context = response["hookSpecificOutput"]["additionalContext"]
-    assert row["authority_mode"] == "remote"
-    assert row["availability"] == "adapter_backend_unsupported"
-    assert row["recall_invoked"] is False
-    assert row["rule_id"] == "adapter-backend-unsupported"
-    assert "https://amb.example" not in context
-    assert "https://amb.example" not in evidence_text(home)
-    assert MEMORY not in context
-    assert "not an unavailable bridge" in context
-    assert "not an empty memory result" in context
+    with remote_authority(tmp_path, monkeypatch) as (url, store, calls):
+        if scenario in {"hit", "stale_conflict", "irrelevant_hit"}:
+            store.store(
+                namespace="project:fixture",
+                kind="memory",
+                content=(
+                    STALE_MEMORY
+                    if scenario == "stale_conflict"
+                    else "Banana pancake recipe"
+                    if scenario == "irrelevant_hit"
+                    else MEMORY
+                ),
+            )
+        if scenario == "irrelevant_hit":
+            monkeypatch.setattr("agent_mem_bridge.lifecycle_activation._recall_query", lambda _: "banana")
+        if scenario == "unavailable":
+            url = "http://127.0.0.1:1/mcp"
+        if configured_by == "env":
+            monkeypatch.setenv("AGENT_MEMORY_BRIDGE_AUTHORITY_URL", url)
+        else:
+            (home / "config.toml").write_text(f'[deployment]\nauthority_url = "{url}"\n', encoding="utf-8")
+        monkeypatch.setattr(sqlite3, "connect", guarded_connect)
+        transport_attempts = []
+        if scenario == "skip":
+
+            def forbidden_transport(*args, **kwargs):
+                transport_attempts.append(1)
+                raise AssertionError("negative control created an HTTP client")
+
+            monkeypatch.setattr("agent_mem_bridge.lifecycle_http.httpx2.AsyncClient", forbidden_transport)
+        prompt = "Fix the typo" if scenario == "skip" else MATERIAL
+        response = run_hook_payload(task_payload(repo, prompt))
+        row = evidence_rows(home)[-1]
+        assert row["authority_mode"] == "remote"
+        assert row["recall_state"] == {"skip": "skipped", "unavailable": "error"}.get(scenario, scenario)
+        assert len(calls) == (0 if scenario in {"skip", "unavailable"} else 1)
+        if calls:
+            assert calls[0]["namespace"] == "project:fixture"
+            assert calls[0]["limit"] == 3
+            assert calls[0]["kind"] == "memory"
+            run_hook_payload(task_payload(repo, prompt))
+            assert evidence_rows(home)[-1]["repeat_suppressed"] is True
+            assert len(calls) == 1
+        assert attempts == []  # Independent of hook exception handling.
+        assert transport_attempts == []
+        assert "CONFLICTING-LOCAL-TRAP" not in json.dumps(response)
+        assert url not in evidence_text(home)
+        assert response["continue"] is True
+        if scenario == "unavailable":
+            assert row["availability"] == "error"
+            assert "not an empty memory result" in json.dumps(response)
 
 
-def test_config_authority_url_blocks_local_fallback(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("authorized", [True, False])
+def test_remote_bearer_authentication(tmp_path: Path, monkeypatch, authorized) -> None:
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
-    remember(home, "project:fixture", MEMORY)
-    (home / "config.toml").write_text(
-        '[deployment]\nauthority_url = "https://config.example/mcp"\n',
-        encoding="utf-8",
-    )
-    response = run_hook_payload(task_payload(repo, MATERIAL, session_id="config-remote"))
-    row = evidence_rows(home)[-1]
-    assert row["availability"] == "adapter_backend_unsupported"
-    assert row["recall_invoked"] is False
-    assert MEMORY not in response["hookSpecificOutput"]["additionalContext"]
-    assert "https://config.example" not in evidence_text(home)
+    remember(home, "project:fixture", "CONFLICTING-LOCAL-TRAP run ledger schema")
+    token = tmp_path / "token"
+    token.write_text("private-fixture-token", encoding="ascii")
+    token.chmod(0o600)
+    with remote_authority(tmp_path, monkeypatch, token_file=token) as (url, store, calls):
+        store.store(namespace="project:fixture", kind="memory", content=MEMORY)
+        monkeypatch.setenv("AGENT_MEMORY_BRIDGE_AUTHORITY_URL", url)
+        if authorized:
+            monkeypatch.setenv("AGENT_MEMORY_BRIDGE_HTTP_TOKEN_FILE", str(token))
+        local_calls = []
+
+        def forbidden(*args, **kwargs):
+            local_calls.append(1)
+            raise AssertionError("local fallback")
+
+        monkeypatch.setattr("agent_mem_bridge.lifecycle_activation._recall", forbidden)
+        response = run_hook_payload(task_payload(repo, MATERIAL))
+        assert evidence_rows(home)[-1]["recall_state"] == ("hit" if authorized else "error")
+        assert len(calls) == int(authorized)
+        assert local_calls == []
+        assert "private-fixture-token" not in json.dumps(response) + evidence_text(home)
 
 
 def test_exact_repeat_is_suppressed_but_a_paraphrase_recalls_again(tmp_path: Path, monkeypatch) -> None:
