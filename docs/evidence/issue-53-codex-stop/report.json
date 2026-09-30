@@ -1,0 +1,109 @@
+{
+  "schema": "amb.codex-stop-host-proof.v1",
+  "passed": true,
+  "codex_version": "codex-cli 0.157.1",
+  "model": "gpt-6-luna",
+  "hook_loading": "invocation_inline",
+  "lanes": [
+    {
+      "lane": "positive",
+      "passed": true,
+      "exit_code": 0,
+      "terminal_completed": true,
+      "callback_count": 1,
+      "candidate_count": 1,
+      "durable_count": 1,
+      "ordinary_durable_unchanged": true,
+      "candidate_status": "needs_review",
+      "hidden_from_recall_browse_export": true,
+      "visible_sha256": "6f405badc5544ca4a41875d580245e65c630a6e70bd5c25dd3a62bd422aaa5ae",
+      "native_callback_projection": [
+        {
+          "hook_event_name": "Stop",
+          "session_id": "sha256:23f57b177804b3ae04ba3537ab4304f960290f826635adb91758ef216b730a42",
+          "turn_id": "sha256:d207441ce7fa1805e0b1eefff9142ff526eb0277a4527c843d3abf3f53906c78",
+          "stop_hook_active": false,
+          "visible_sha256": "6f405badc5544ca4a41875d580245e65c630a6e70bd5c25dd3a62bd422aaa5ae",
+          "visible_bytes": 307
+        }
+      ],
+      "host_event_projection": [
+        {
+          "type": "thread.started",
+          "thread_id": "sha256:23f57b177804b3ae04ba3537ab4304f960290f826635adb91758ef216b730a42"
+        },
+        {
+          "type": "turn.completed"
+        }
+      ],
+      "receipts": [
+        {
+          "artifact_sha256": "6f405badc5544ca4a41875d580245e65c630a6e70bd5c25dd3a62bd422aaa5ae",
+          "automatic_promotion": false,
+          "disposition": "captured",
+          "hook_event_name": "Stop",
+          "reason": "capture_policy_evaluated",
+          "record_ids": [
+            "sha256:f8affadd43d1a33aa3b37dc0a9eee6a4ec7c3408b89f5b3d0f52fbb9a398bd72"
+          ],
+          "recorded_at": "2026-09-30T12:52:27.658027+00:00",
+          "schema": "amb.codex-stop-capture-evidence.v1",
+          "session_id": "sha256:23f57b177804b3ae04ba3537ab4304f960290f826635adb91758ef216b730a42",
+          "turn_id": "sha256:d207441ce7fa1805e0b1eefff9142ff526eb0277a4527c843d3abf3f53906c78",
+          "writes": 1
+        }
+      ]
+    },
+    {
+      "lane": "negative",
+      "passed": true,
+      "exit_code": 0,
+      "terminal_completed": true,
+      "callback_count": 1,
+      "candidate_count": 0,
+      "durable_count": 1,
+      "ordinary_durable_unchanged": true,
+      "candidate_status": null,
+      "hidden_from_recall_browse_export": true,
+      "visible_sha256": "57962a9f8c9038115490e0e126603d8ddc00511add1b5658b1f6e2e41d2e525a",
+      "native_callback_projection": [
+        {
+          "hook_event_name": "Stop",
+          "session_id": "sha256:98e3a1eb797edd3be5e56b02e0c52401149631e4ae702bdf37f4505093486bcf",
+          "turn_id": "sha256:dbffc81aacb37764b833412383c035de736848d594fc47e3bb4a96a6eeeac8c6",
+          "stop_hook_active": false,
+          "visible_sha256": "57962a9f8c9038115490e0e126603d8ddc00511add1b5658b1f6e2e41d2e525a",
+          "visible_bytes": 63
+        }
+      ],
+      "host_event_projection": [
+        {
+          "type": "thread.started",
+          "thread_id": "sha256:98e3a1eb797edd3be5e56b02e0c52401149631e4ae702bdf37f4505093486bcf"
+        },
+        {
+          "type": "turn.completed"
+        }
+      ],
+      "receipts": [
+        {
+          "automatic_promotion": false,
+          "disposition": "no_capture",
+          "hook_event_name": "Stop",
+          "reason": "no_bounded_artifact",
+          "record_ids": [],
+          "recorded_at": "2026-09-30T12:52:30.186420+00:00",
+          "schema": "amb.codex-stop-capture-evidence.v1",
+          "session_id": "sha256:98e3a1eb797edd3be5e56b02e0c52401149631e4ae702bdf37f4505093486bcf",
+          "turn_id": "sha256:dbffc81aacb37764b833412383c035de736848d594fc47e3bb4a96a6eeeac8c6",
+          "writes": 0
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "src/agent_mem_bridge/lifecycle_activation.py": "1970e51ca32574c05a78354def398c2ffc03a74230c5a1c77750665a1016f5a7",
+    "src/agent_mem_bridge/write_side_capture.py": "b08bddd9b97559a1222c0a9128295d65e769ea46a1c5c41ab8aea8613dffe87a",
+    "scripts/check_codex_stop_capture.py": "dffda790b4154e592d39d7d479dea47aa6c64adb64e876b4034805e4efe9e020"
+  }
+}
