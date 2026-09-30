@@ -85,8 +85,9 @@ On 2026-09-30, Codex CLI 0.157.1 passed both lanes with an invocation-inline
 Stop hook: positive 1 candidate, negative 0, no automatic promotion, and seeded
 memory unchanged. Positive message SHA-256:
 `6f405badc5544ca4a41875d580245e65c630a6e70bd5c25dd3a62bd422aaa5ae`.
-Tested adapter SHA-256:
-`a63f2ccb66323a560d7ce5d0d1c43d3c6aaa81388681870ae19561081ba506bd`.
+The [checked-in evidence bundle](evidence/issue-53-codex-stop/README.md)
+contains the rerun after integration with HTTP recall, redacted native callback
+projections, verifier results, and a source-hash manifest for post-merge checks.
 Two earlier project-file hook attempts ended without invoking Stop and did not
 pass. This check does not certify plugin installation, project-file discovery,
 Windows hosts, remote capture, or read-side activation. It proves mechanical

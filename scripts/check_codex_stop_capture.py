@@ -36,6 +36,38 @@ ARTIFACT = {
 }
 
 
+def callback(receipt_path: Path) -> int:
+    """Invoked only by the native Stop command; retain an allowlisted input projection."""
+    from agent_mem_bridge.lifecycle_activation import run_hook_payload
+
+    payload = json.load(sys.stdin)
+    message = payload.get("last_assistant_message", "")
+    projection = {key: payload.get(key) for key in ("hook_event_name", "session_id", "turn_id", "stop_hook_active")}
+    projection["visible_sha256"] = hashlib.sha256(message.encode("utf-8")).hexdigest()
+    projection["visible_bytes"] = len(message.encode("utf-8"))
+    with receipt_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(projection) + "\n")
+    print(json.dumps(run_hook_payload(payload)))
+    return 0
+
+
+def redact(value):
+    """Stable identifier hashes preserve joins without publishing host session IDs."""
+    if isinstance(value, list):
+        return [redact(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {}
+    for key, item in value.items():
+        if key in {"session_id", "turn_id", "thread_id"} and isinstance(item, str):
+            result[key] = "sha256:" + hashlib.sha256(item.encode()).hexdigest()
+        elif key == "record_ids":
+            result[key] = ["sha256:" + hashlib.sha256(identifier.encode()).hexdigest() for identifier in item]
+        else:
+            result[key] = redact(item)
+    return result
+
+
 def host_gate(events: list[dict], receipts: list[dict], returncode: int, final: str, positive: bool) -> bool:
     """A zero-row database without a completed callback is not a passing control."""
     threads = [row.get("thread_id") for row in events if row.get("type") == "thread.started"]
@@ -108,7 +140,8 @@ def collect_lane(args: argparse.Namespace, lane: str) -> dict:
     }.items():
         env["AGENT_MEMORY_BRIDGE_" + key] = str(value)
     env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
-    command_args = [sys.executable, "-m", "agent_mem_bridge", "lifecycle-hook"]
+    native_path = work / "native-callback.jsonl"
+    command_args = [sys.executable, str(Path(__file__).resolve()), "--callback", str(native_path)]
     command = subprocess.list2cmdline(command_args) if os.name == "nt" else shlex.join(command_args)
     hook_config = 'hooks.Stop=[{hooks=[{type="command",command=' + json.dumps(command) + ",timeout=10}]}]"
     positive = lane == "positive"
@@ -160,6 +193,7 @@ def collect_lane(args: argparse.Namespace, lane: str) -> dict:
     final = messages[-1] if messages else ""
     receipt_path = home / "lifecycle" / "capture-evidence.jsonl"
     receipts = [json.loads(line) for line in receipt_path.read_text().splitlines()] if receipt_path.exists() else []
+    native = [json.loads(line) for line in native_path.read_text().splitlines()] if native_path.exists() else []
     with sqlite3.connect(home / "bridge.db") as conn:
         rows = conn.execute("SELECT id, content, is_learning_candidate FROM memories").fetchall()
     candidates = [row for row in rows if row[2]]
@@ -170,6 +204,11 @@ def collect_lane(args: argparse.Namespace, lane: str) -> dict:
     exported = store.export(namespace=NAMESPACE)["content"]
     passed = (
         host_gate(events, receipts, run.returncode, final, positive)
+        and len(native) == 1
+        and native[0]["hook_event_name"] == "Stop"
+        and native[0]["session_id"] == receipts[0]["session_id"]
+        and native[0]["turn_id"] == receipts[0]["turn_id"]
+        and native[0]["visible_sha256"] == hashlib.sha256(final.encode()).hexdigest()
         and final == expected
         and len(candidates) == int(positive)
         and durable == [(seed["id"], EXPLICIT, 0)]
@@ -198,7 +237,18 @@ def collect_lane(args: argparse.Namespace, lane: str) -> dict:
         "callback_count": len(receipts),
         "candidate_count": len(candidates),
         "durable_count": len(durable),
+        "ordinary_durable_unchanged": durable == [(seed["id"], EXPLICIT, 0)],
+        "candidate_status": parse_structured_record(candidates[0][1]).get("candidate_status") if candidates else None,
+        "hidden_from_recall_browse_export": (
+            {row["id"] for row in visible} == {seed["id"]} and not recalled and ARTIFACT["claim"] not in exported
+        ),
         "visible_sha256": hashlib.sha256(final.encode()).hexdigest(),
+        "native_callback_projection": native,
+        "host_event_projection": [
+            {key: value for key, value in row.items() if key in {"type", "thread_id"}}
+            for row in events
+            if row.get("type") in {"thread.started", "turn.completed"}
+        ],
         "receipts": receipts,
     }
 
@@ -257,9 +307,12 @@ def main() -> int:
         },
     }
     (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.redacted.json").write_text(json.dumps(redact(report), indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] else 1
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "--callback":
+        raise SystemExit(callback(Path(sys.argv[2])))
     raise SystemExit(main())
