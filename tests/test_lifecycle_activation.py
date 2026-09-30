@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -22,6 +23,7 @@ from agent_mem_bridge.lifecycle_activation import (
     run_hook_payload,
 )
 from agent_mem_bridge.mcp_boundary import PUBLIC_TOOL_NAMES
+from agent_mem_bridge.promotion import promote_entry
 from agent_mem_bridge.repository_snapshot_store import RepositorySnapshotStore, repository_identity
 from agent_mem_bridge.storage import MemoryStore
 
@@ -165,6 +167,8 @@ def test_codex_hook_file_matches_cross_platform_entrypoint() -> None:
     handler = document["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     assert handler["command"] == "python3 -m agent_mem_bridge lifecycle-hook"
     assert handler["commandWindows"] == "py -3 -m agent_mem_bridge lifecycle-hook"
+    assert document["hooks"]["Stop"][0]["hooks"] == [handler]
+    assert "matcher" not in document["hooks"]["Stop"][0]
     assert "AGENTS.md" not in handler["command"]
     assert "AGENTS.md" not in handler["commandWindows"]
 
@@ -572,3 +576,222 @@ def test_cli_hook_entrypoint_handles_spaced_cwd_and_invalid_input(tmp_path: Path
 
     monkeypatch.setattr(sys, "stdin", io.StringIO("not-json"))
     assert main(["lifecycle-hook"]) == 0
+
+
+def _stop_artifact() -> dict[str, object]:
+    return {
+        "schema": "memory.visible_artifact.v1",
+        "artifact_id": "decision-1",
+        "artifact_class": "decision",
+        "claim": "Keep write-side capture in the hidden review lane until a person promotes it.",
+        "reason": "The rule is reusable for later sessions and must not become trusted memory automatically.",
+        "evidence_refs": ["visible:codex-stop:decision-1"],
+        "scope": "project",
+        "namespace": "project:forged",
+        "candidate_status": "approved",
+        "decision": "allow",
+    }
+
+
+def _stop_payload(repo: Path, message: str) -> dict[str, object]:
+    transcript = repo / "transcript.txt"
+    transcript.write_text("TRANSCRIPT-SECRET hidden reasoning\n" + message + "\n", encoding="utf-8")
+    return {
+        "hook_event_name": "Stop",
+        "session_id": "thr_123",
+        "turn_id": "turn_123",
+        "cwd": str(repo / "nested dir"),
+        "model": "gpt-5.5",
+        "permission_mode": "default",
+        "stop_hook_active": False,
+        "transcript_path": str(transcript),
+        "namespace": "project:forged",
+        "last_assistant_message": message,
+    }
+
+
+def _run_cli(payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    return subprocess.run(
+        [sys.executable, "-m", "agent_mem_bridge", "lifecycle-hook"],
+        input=json.dumps(payload),
+        text=True,
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _learning_rows(home: Path) -> list[sqlite3.Row]:
+    db = home / "bridge.db"
+    if not db.exists():
+        return []
+    connection = sqlite3.connect(db)
+    connection.row_factory = sqlite3.Row
+    try:
+        return list(
+            connection.execute(
+                """
+                SELECT id, namespace, content, tags_json, is_learning_candidate
+                FROM memories
+                WHERE COALESCE(is_learning_candidate, 0) = 1
+                ORDER BY created_at
+                """
+            )
+        )
+    finally:
+        connection.close()
+
+
+def test_codex_stop_structured_artifact_creates_hidden_needs_review_candidate(tmp_path: Path, monkeypatch) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    explicit = "Explicit user store remains visible beside lifecycle capture."
+    remember(home, "project:fixture", explicit, title="Explicit store")
+    artifact = _stop_artifact()
+    completed = _run_cli(_stop_payload(repo, json.dumps(artifact)))
+    assert completed.returncode == 0, completed.stderr
+    response = json.loads(completed.stdout)
+    assert response == {"continue": True}
+    assert "hidden review lane" not in completed.stdout
+    assert "project:forged" not in completed.stdout
+
+    rows = _learning_rows(home)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["namespace"] == "project:fixture"
+    assert row["is_learning_candidate"] == 1
+    assert "candidate_status: needs_review" in row["content"]
+    assert "capture_boundary: post_run" in row["content"]
+    assert "source_runtime: codex" in row["content"]
+    assert "source_session_id: thr_123" in row["content"]
+    assert "source_task_id: turn_123" in row["content"]
+    assert "visible_artifact_id: decision-1" in row["content"]
+    digest = hashlib.sha256(json.dumps(artifact).encode()).hexdigest()
+    assert f"codex-stop:sha256:{digest}" in row["content"]
+    receipt = json.loads((home / "lifecycle" / "capture-evidence.jsonl").read_text())
+    assert receipt["writes"] == 1
+    assert receipt["automatic_promotion"] is False
+    assert receipt["record_ids"] == [row["id"]]
+    assert receipt["artifact_sha256"] == digest
+    assert "approved" not in row["content"]
+    assert "project:forged" not in row["content"]
+    assert "TRANSCRIPT-SECRET" not in row["content"]
+    assert "candidate_status:needs_review" in row["tags_json"]
+    assert_no_private_text(home, response)
+
+    store = MemoryStore(home / "bridge.db", log_dir=home / "logs")
+    normal = store.recall(namespace="project:fixture", query="hidden review lane", limit=10)
+    explicit_recall = store.recall(namespace="project:fixture", query="Explicit user store remains visible", limit=10)
+    review = store.recall(namespace="project:fixture", tags_any=["kind:learning-candidate"], limit=10)
+    forged = store.recall(namespace="project:forged", query="hidden review lane", limit=10)
+    assert normal["count"] == 0
+    assert explicit_recall["count"] == 1
+    assert review["count"] == 1
+    assert forged["count"] == 0
+    with pytest.raises(ValueError, match="cannot be promoted directly"):
+        promote_entry(store, str(row["id"]), "learn")
+
+    repeated = _run_cli(_stop_payload(repo, json.dumps(artifact)))
+    assert repeated.returncode == 0, repeated.stderr
+    assert len(_learning_rows(home)) == 1
+    assert memory_count(home) == 2
+
+
+def test_codex_stop_summary_and_wrapped_artifact_capture_nothing(tmp_path: Path, monkeypatch) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    remember(home, "project:fixture", MEMORY)
+    before = memory_count(home)
+    summary = (
+        "Summary: Keep write-side capture in the hidden review lane until a person promotes it. "
+        "The rule is reusable for later sessions."
+    )
+    wrapped = "Captured decision:\n```json\n" + json.dumps(_stop_artifact()) + "\n```"
+    for message in (summary, wrapped):
+        completed = _run_cli(_stop_payload(repo, message))
+        assert completed.returncode == 0, completed.stderr
+        assert json.loads(completed.stdout) == {"continue": True}
+    assert _learning_rows(home) == []
+    assert memory_count(home) == before
+    receipts = [json.loads(line) for line in (home / "lifecycle" / "capture-evidence.jsonl").read_text().splitlines()]
+    assert len(receipts) == 2
+    assert all(row["writes"] == 0 and row["disposition"] == "no_capture" for row in receipts)
+    assert "TRANSCRIPT-SECRET" not in evidence_text(home)
+
+
+def test_codex_precompact_transcript_does_not_capture(tmp_path: Path, monkeypatch) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    transcript = repo / "transcript.txt"
+    transcript.write_text(json.dumps(_stop_artifact()) + "\nTRANSCRIPT-SECRET\n", encoding="utf-8")
+    response = run_hook_payload(
+        {
+            "hook_event_name": "PreCompact",
+            "trigger": "auto",
+            "session_id": "thr_123",
+            "turn_id": "turn_123",
+            "cwd": str(repo / "nested dir"),
+            "transcript_path": str(transcript),
+            "last_assistant_message": json.dumps(_stop_artifact()),
+        }
+    )
+    assert response == {"continue": True}
+    assert not (home / "bridge.db").exists()
+    assert _learning_rows(home) == []
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"last_assistant_message": None},
+        {"last_assistant_message": "{"},
+        {"last_assistant_message": "[" * 2000 + "]" * 2000},
+        {"last_assistant_message": "\ud800"},
+        {"last_assistant_message": json.dumps({**_stop_artifact(), "claim": "界" * 1400}, ensure_ascii=False)},
+        {"last_assistant_message": json.dumps({**_stop_artifact(), "hidden_reasoning": "not retained"})},
+        {"session_id": ""},
+        {"turn_id": ""},
+        {"host": "opencode"},
+    ],
+)
+def test_stop_rejects_unsafe_missing_or_wrong_host_input(tmp_path: Path, monkeypatch, override) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    remember(home, "project:fixture", MEMORY)
+    payload = _stop_payload(repo, json.dumps(_stop_artifact()))
+    payload.update(override)
+    assert run_hook_payload(payload) == {"continue": True}
+    assert _learning_rows(home) == []
+    assert memory_count(home) == 1
+
+
+def test_stop_capture_failure_is_not_a_passing_negative_control(tmp_path: Path, monkeypatch) -> None:
+    home, repo = prepare_task_repo(tmp_path, monkeypatch)
+    (home / "bridge.db").write_text("not sqlite")
+    assert run_hook_payload(_stop_payload(repo, json.dumps(_stop_artifact()))) == {"continue": True}
+    receipt = json.loads((home / "lifecycle" / "capture-evidence.jsonl").read_text())
+    assert receipt["disposition"] == "error"
+    assert receipt["writes"] is None
+    assert receipt["automatic_promotion"] is None
+    assert "TRANSCRIPT-SECRET" not in evidence_text(home)
+
+
+def test_codex_stop_does_not_capture_without_binding_or_local_authority(tmp_path: Path, monkeypatch) -> None:
+    home = isolate(tmp_path, monkeypatch)
+    repo = make_repo(tmp_path)
+    (repo / "nested dir").mkdir()
+    unbound = run_hook_payload(_stop_payload(repo, json.dumps(_stop_artifact())))
+    assert unbound == {"continue": True}
+    assert not (home / "bridge.db").exists()
+
+    remote_root = tmp_path / "remote"
+    remote_root.mkdir()
+    home, repo = prepare_task_repo(remote_root, monkeypatch)
+    remember(home, "project:fixture", MEMORY)
+    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_AUTHORITY_URL", "https://amb.example/mcp")
+
+    def fail_if_opened(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("local database opened despite a remote authority")
+
+    monkeypatch.setattr("agent_mem_bridge.storage.MemoryStore", fail_if_opened)
+    remote = run_hook_payload(_stop_payload(repo, json.dumps(_stop_artifact())))
+    assert remote == {"continue": True}
+    assert _learning_rows(home) == []

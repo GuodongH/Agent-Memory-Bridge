@@ -6,7 +6,7 @@ Agent Memory Bridge (AMB) is a **local-first, governed engineering-memory bridge
 
 ## Optional lifecycle adapter
 
-A host may optionally run `lifecycle-hook` at session start, task submission, or compaction. The hook resolves the checkout through the governed project resolver and can make one targeted recall. An exact repeat of that prompt is suppressed; a reworded prompt can recall again. If a remote authority URL is configured, the hook uses the existing MCP Streamable HTTP transport and never opens or falls back to a local database. Its evidence log and injected context are derived or transient. They are not durable memory, a scheduler, or a second authority. Plain MCP use does not load this adapter.
+A host may optionally run `lifecycle-hook` at session start, task submission, compaction, or Codex turn stop. The hook resolves the checkout through the governed project resolver and can make one targeted recall. An exact repeat of that prompt is suppressed; a reworded prompt can recall again. If a remote authority URL is configured, the hook uses the existing MCP Streamable HTTP transport and never opens or falls back to a local database. Its evidence log and injected context are derived or transient. They are not durable memory, a scheduler, or a second authority. Codex Stop may also store one hidden review candidate in the selected local authority from an already structured visible artifact; it does not summarize or promote that candidate. Plain MCP use does not load this adapter.
 
 ## The System in One View
 

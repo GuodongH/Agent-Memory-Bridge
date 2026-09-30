@@ -526,7 +526,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser(
         "lifecycle-hook",
-        help="Evaluate one optional host lifecycle event from stdin without writing durable memory.",
+        help="Evaluate one optional host lifecycle event from stdin. Codex Stop may store one hidden review candidate.",
     )
     activation_receipt_parser.add_argument("--namespace", required=True, help="Namespace to inspect.")
     activation_receipt_parser.add_argument("--correlation-id", required=True, help="Correlation id to inspect.")
