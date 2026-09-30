@@ -7,6 +7,7 @@ write durable memory, read transcripts, or accept caller-declared scope.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -254,18 +255,28 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
         }.get(str(scope["status"]), "project-scope-unavailable")
         context = _scope_block_context(str(scope["status"]))
     elif recall_requested and not authority["recall_permitted"]:
-        decision = "unsupported" if authority_mode == "remote" else "unknown"
-        rule_id = "adapter-backend-unsupported" if authority_mode == "remote" else "authority-unknown"
+        decision = "unknown"
+        rule_id = "authority-unknown"
         recall_state = "skipped"
-        context = _authority_block_context(authority_mode)
+        context = _authority_block_context()
     elif recall_requested:
         recall_invoked = True
         try:
-            items = _recall(str(scope["namespace"]), _recall_query(prompt))
+            if authority_mode == "remote":
+                from .lifecycle_http import recall_remote
+
+                items = asyncio.run(
+                    recall_remote(str(authority["url"]), str(scope["namespace"]), _recall_query(prompt))
+                )
+                availability = "available"
+            else:
+                items = _recall(str(scope["namespace"]), _recall_query(prompt))
         except Exception as exc:  # noqa: BLE001 - hook must fail closed without echoing the prompt
             recall_state = "error"
             error_type = type(exc).__name__
-            context = "Local AMB recall failed. This is not an empty memory result."
+            if authority_mode == "remote":
+                availability = "error"
+            context = "AMB recall failed. This is not an empty memory result. No fallback authority was used."
         else:
             useful, irrelevant, stale = _partition(items, prompt)
             recalled_ids = tuple(str(item.get("id") or "") for item in useful + irrelevant if item.get("id"))
@@ -363,9 +374,8 @@ def render_hook_response(payload: Mapping[str, Any], observation: ActivationObse
 def resolve_activation_authority() -> dict[str, Any]:
     """Choose the recall backend without treating a missing local file as AMB downtime.
 
-    V1 can open only a selected local SQLite authority. An explicit remote
-    authority URL means the canonical store is elsewhere: do not open a local
-    database, and do not describe that as an unavailable bridge.
+    An explicit remote URL selects HTTP before any local database inspection.
+    Availability remains unknown until the selected authority answers.
     """
 
     try:
@@ -373,7 +383,7 @@ def resolve_activation_authority() -> dict[str, Any]:
     except (OSError, tomllib.TOMLDecodeError):
         return {"mode": "unknown", "availability": "unknown", "recall_permitted": False}
     if remote_url:
-        return {"mode": "remote", "availability": "adapter_backend_unsupported", "recall_permitted": False}
+        return {"mode": "remote", "availability": "unknown", "recall_permitted": True, "url": remote_url}
     try:
         local_db_present = resolve_bridge_db_path().is_file()
     except OSError:
@@ -387,12 +397,7 @@ def _explicit_remote_authority_url() -> str:
     return resolve_remote_authority_url() or ""
 
 
-def _authority_block_context(mode: str) -> str:
-    if mode == "remote":
-        return (
-            "A remote AMB authority is configured. This lifecycle adapter does not open a local database "
-            "and does not call that remote authority yet. This is not an unavailable bridge and not an empty memory result."
-        )
+def _authority_block_context() -> str:
     return (
         "No local AMB authority database is selected. This is not an unavailable bridge and not an empty memory result."
     )
