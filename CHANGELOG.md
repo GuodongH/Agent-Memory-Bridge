@@ -8,6 +8,18 @@ The v0.28.0 tagged archive route, when using that tag, is:
 
 This document records the durable capability milestones in Agent Memory Bridge (AMB). It is **not** a release-by-release ledger, a current-status page, or a substitute for detailed proof artifacts. Current implementation facts belong in [Production Status](docs/PRODUCTION-STATUS.md); future work belongs in the [Roadmap](docs/ROADMAP.md); detailed development chronology remains in Git history and published GitHub Releases where available.
 
+## v0.35.0 — Governed Lifecycle Activation
+
+- Resolves governed project/worktree scope through the existing confirmed namespace binding; hooks do not invent scope or persist a new authority.
+- Adds opt-in lifecycle activation with bounded material-history recall, deterministic skip controls, stale/live repository reconciliation, exact-repeat suppression and derived compaction continuity. Plain MCP remains independent of hooks.
+- Captures one already structured visible Codex Stop artifact as a hidden `needs_review` candidate in the local authority; no transcript/hidden-reasoning persistence or automatic durable promotion.
+- Routes configured remote lifecycle recall exclusively to HTTP authority, distinguishing successful `no_hit` from `error` without local SQLite fallback. Remote write capture remains blocked.
+- Freezes live lifecycle measurement, cases, expected decisions and grader. Historical Luna 3/10, rejected pilot and intermediate 8/10 results remain intact.
+- Records matched Codex CLI 0.160.0 / `gpt-6-luna` / remote-loopback / invocation-inline activation at **10/10**, followed by canonical source/report/receipt verification. OpenCode prompt activation remains bounded `NOT_RUN`/pending; this is rule-based reference-configuration evidence, not general language/host certification.
+- Keeps schema v12, exactly 17 public MCP tools, the public tool-schema digest and existing authority boundaries unchanged.
+
+See [v0.35.0 announcement](docs/v0.35.0-announcement.md) and the [lifecycle release contract](docs/evidence/v0.35.0-lifecycle/CONTRACT.md).
+
 ## v0.34.1 — Filesystem Portability Patch
 
 - Keeps local-filesystem deployment guards fail-closed on Windows and Python 3.13.
@@ -116,6 +128,7 @@ See [v0.32.1 announcement](docs/v0.32.1-announcement.md) for the distribution co
 | v0.32.1 source/release line | **PyPI Distribution** | The release line adds a PyPI install path and release-triggered Trusted Publishing without changing runtime behavior, schema, public MCP surface, or authority boundaries. | [v0.32.1 announcement](docs/v0.32.1-announcement.md), [Production Status](docs/PRODUCTION-STATUS.md) |
 | v0.32.2 source/release line | **Governed Project Memory** | Repositions AMB around governed project memory, synchronizes the new hero and bilingual README story, and makes install-versus-client-registration boundaries explicit without changing runtime behavior or authority. | [v0.32.2 announcement](docs/v0.32.2-announcement.md), [Production Status](docs/PRODUCTION-STATUS.md), [Integrations](docs/INTEGRATIONS.md) |
 | v0.33.0 source/release line | **Operationalization** | Fresh-session first-win evidence, MCP 2.x floor/latest gates, cross-platform liveness semantics, public/internal error separation, and single-authority multi-machine guidance strengthen release and operational confidence without expanding durable authority. | [v0.33.0 announcement](docs/v0.33.0-announcement.md), [First-win acceptance](docs/FIRST-WIN-ACCEPTANCE.md), [MCP compatibility](docs/MCP-2026-COMPATIBILITY.md) |
+| v0.35.0 source/release line | **Governed Lifecycle Activation** | Governed scope, optional lifecycle recall, bounded Stop review-candidate capture, exclusive remote recall authority and matched Codex Luna 10/10 evidence; plain MCP, schema v12 and 17 tools remain unchanged. | [v0.35.0 announcement](docs/v0.35.0-announcement.md), [Lifecycle release contract](docs/evidence/v0.35.0-lifecycle/CONTRACT.md) |
 | v0.34.1 source/release line | **Filesystem Portability Patch** | Fail-closed Windows and symlink-loop filesystem classification on the v0.34 remote-authority line, preserving schema v12 and exactly 17 tools. | [v0.34.1 announcement](docs/v0.34.1-announcement.md), [Remote deployment](docs/REMOTE-DEPLOYMENT.md) |
 | v0.34.0 source/release line | **Remote Authority Deployment** | Optional SDK Streamable HTTP, local-filesystem deployment guards, official container path, and HTTP doctor/verify preserve schema v12 and exactly 17 tools. Production NAS cutover remains a separate owner-approved operation. | [v0.34.0 announcement](docs/v0.34.0-announcement.md), [Remote deployment](docs/REMOTE-DEPLOYMENT.md), [Remote migration](docs/REMOTE-MIGRATION.md) |
 

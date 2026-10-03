@@ -99,10 +99,10 @@ def test_current_source_contract_rejects_automatic_learning_claim_drift(tmp_path
     )
 
 
-def test_readmes_use_v034_release_identity() -> None:
+def test_readmes_use_v035_release_identity() -> None:
     english = (ROOT / "README.md").read_text(encoding="utf-8")
     chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
-    assert CURRENT == "0.34.1"
+    assert CURRENT == "0.35.0"
     assert f"Current package/source version: `{CURRENT}`." in english
     assert f"当前包/源码版本：`{CURRENT}`。" in chinese
     assert f"agent-memory-bridge=={CURRENT}" in english
@@ -127,6 +127,19 @@ def test_current_package_and_source_docs_use_published_identity() -> None:
     assert "exactly 17 tools" in announcement
     assert "no MCP tool #18" in announcement
     assert "no automatic learning" in announcement
+    contract = (ROOT / "docs/evidence/v0.35.0-lifecycle/CONTRACT.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "v0.35.0 — Governed Lifecycle Activation" in announcement
+    assert "v0.35.0 — Governed Lifecycle Activation" in changelog
+    assert "v0.35.0 source/release line" in changelog
+    assert "Codex CLI 0.160.0" in contract
+    assert "gpt-6-luna" in contract
+    assert "10 PASS / 0 FAIL / 0 INCONCLUSIVE" in contract
+    assert "codex-repo-read-v1" in contract
+    assert "codex-cohort-v1" in contract
+    assert PUBLIC_TOOL_DIGEST in contract
+    assert "NOT_RUN" in contract
+    assert "release merge SHA" in contract
 
 
 def test_historical_v0274_evidence_remains_historical() -> None:
