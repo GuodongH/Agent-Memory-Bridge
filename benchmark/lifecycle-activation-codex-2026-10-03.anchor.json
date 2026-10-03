@@ -1,0 +1,524 @@
+{
+  "schema": "lifecycle-activation-evidence-anchor-v1",
+  "execution_kind": "source_bound_rescore",
+  "collection_identity": {
+    "host": {
+      "id": "codex",
+      "version": "codex-cli 0.160.0",
+      "model": "gpt-6-luna"
+    },
+    "execution_kind": "live",
+    "condition": "adapter_enabled",
+    "adapter_backend": "remote_loopback",
+    "hook_loading": "invocation_inline",
+    "pack": "v2",
+    "freeze_sha256": {
+      "benchmark/lifecycle-activation-v2.json": "543d15ddb7655a81641aca073dd614168d844cb83f407cc825029e490b5d9ba6",
+      "benchmark/lifecycle-activation-v2.md": "c005fb62a05ece009389881fa686b0c90d6bd4ab383edb64ec89c8e3d945b9e1"
+    },
+    "scorer_sha256": "61683f3a7f87b661f7519a046ae22f20613d81566a599ef4d535c6c4bd05193a"
+  },
+  "collection_binding": {
+    "revision": "codex-cohort-v1",
+    "source_sha256": {
+      "tools/evidence/lifecycle_activation_cohort.py": "c11f0ea4551741de12e0299130b20df8bc9971de9f22d7a8841cfde4508f293d",
+      "scripts/run_lifecycle_activation_benchmark.py": "075ebc4fbab8781df012bd4cd31e2a7730f83e351bba6b6eaf9f9ac06df167a5",
+      "benchmark/lifecycle-activation-codex-cohort-v1.md": "a31ca5b73eee1f70a838fa8f812a3e94687615a0fd92a568390e0947f1723786"
+    }
+  },
+  "measurement": {
+    "revision": "codex-repo-read-v1",
+    "source_sha256": {
+      "tools/evidence/lifecycle_activation_measurement.py": "70ed144a081d8d735e91f1214b464e1b2df9c573b744986428861b078dc09187",
+      "tools/evidence/lifecycle_activation.py": "1fc618ccc523e6ed34dfb5a3ab19da98b5b9e953fb25a4903650d7e8c8c28e21",
+      "tools/evidence/lifecycle_activation_grade.py": "61683f3a7f87b661f7519a046ae22f20613d81566a599ef4d535c6c4bd05193a",
+      "benchmark/lifecycle-activation-codex-repo-read-v1.md": "0ccc6590923f49807d7d8e2e26cea51579c8d7d719cdd25b9f5eb3fce16f086b"
+    }
+  },
+  "source_sha256": {
+    "fresh-session-continuation/codex.jsonl": "4518ce4c4c9fce2ae14c8b07ca89076097f971f55b248163803b82d04252eeaa",
+    "fresh-session-continuation/observation.json": "2463074b8be34ae2d2a3d28614796d75fa00f0e392ba654812e249782d66c438",
+    "fresh-session-continuation/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "fresh-session-continuation/report.json": "558490b0ae769cb88116de12dedcfb5e3807852ae2e441552c81eb6ecfc1a612",
+    "architecture-constraint/codex.jsonl": "d9decb4bce4cf6c98384821306fdeb0c7776e9971ec4c906104aaa33de28b7fb",
+    "architecture-constraint/observation.json": "74290ca959e50288ce1966085a766b45d62e1d1313053519f81ae764d866ccd9",
+    "architecture-constraint/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "architecture-constraint/report.json": "3f4bdd4a77c3c76b361ddfa4f9c3f12c223ebbf3ea962e9b7735e35d4d53b1d3",
+    "known-project-gotcha/codex.jsonl": "c7f61c5ac8c1ce262434c50e16fae199ec8a90c7d5b009beb848c4046bf8a8f8",
+    "known-project-gotcha/observation.json": "b38ee6610983b88848ee3c2ede2614e6b50978bc06366a85682d003a1e7b8da7",
+    "known-project-gotcha/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "known-project-gotcha/report.json": "4ef8e96537eb06fea00f4b886f54dacd748707b2e5838b7ccfff452f4a8b27a6",
+    "indirect-history-dependency/codex.jsonl": "8632f7f1ae4b29b87483a1e9cb84315d2c3f190481e3a4f4a400a30f40c4dd0f",
+    "indirect-history-dependency/observation.json": "cd1374559173d214556959346dc76bd0eedddd20fbd5455851e9d0e80ef5e2f6",
+    "indirect-history-dependency/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "indirect-history-dependency/report.json": "bf90c40e30ff96b06e2bee91f6d783e1117564586d7daad09515320d4a13e8ba",
+    "stale-superseded-conflict/codex.jsonl": "74f69744c3bd7de30645ba9de8f2074ae749613c1f053cd5f47bc447a1573340",
+    "stale-superseded-conflict/observation.json": "00f2aafd83edc91d7c3676b2d8db5ca9de90f7cbaf3e5e09f06011a2f7422c4e",
+    "stale-superseded-conflict/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "stale-superseded-conflict/report.json": "45aa1696d18bd2554ac6d56f099fd88fd82227ed5652d005fdc43d52b52f22cf",
+    "no-relevant-memory/codex.jsonl": "51c44dc5a1d325c51468f2e0f40e17671b9a1724b137eb96ae3474bfa4481717",
+    "no-relevant-memory/observation.json": "c6285bc4278337cc8b5468da7d1c59cb8111c5bd8012a88b01dd56cb2e12e845",
+    "no-relevant-memory/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "no-relevant-memory/report.json": "5f284af43d84420c8574ffdd4673e8afe3ed4abb961d04526072de583e04bcd0",
+    "amb-unavailable/codex.jsonl": "b3f8637c1c6f847e42a50e201a26ef6800f1ad4a2c7ed12854365f37aa574a1c",
+    "amb-unavailable/observation.json": "0242de7ce86efdbc59df68a7cd0b4ff4744849793e6ef053615d917f17d4df8d",
+    "amb-unavailable/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "amb-unavailable/report.json": "5c6dbf8fe5460a84dd56e3ed265eb196e2be488ba0e20f24043ee4633172b9c5",
+    "isolated-typo/codex.jsonl": "603638adfc26688a2ca1450a210e7a4c1fdb59a0471376ee9ed527a2f2bda1f4",
+    "isolated-typo/observation.json": "426b65d504b3d8238347c3c2661f2ceb9c9262670b7ae7d9b0dd1d71795dc5e7",
+    "isolated-typo/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "isolated-typo/report.json": "2ffeba208fd87ac2cb70c5e0e7f758c75984aa45ec91e8a381b64fa5a5ddae39",
+    "repeated-recall/codex.jsonl": "6f50a4e9281d31c2594a745085182ad485f496448ab761afcc953910d6f60a6e",
+    "repeated-recall/observation.json": "6bf5faef8c0e39e763c81fc2230acaefdcd262efc5959e7740d53a86ee88d6b3",
+    "repeated-recall/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "repeated-recall/report.json": "6abe51aaaea922b53540856163f86c679fb00722530cb0884674e8b4d0862278",
+    "cross-client-handoff/codex.jsonl": "3af0db7be7eef782686ecd39e2a43798969f5b265828de4bd85b1797095203e0",
+    "cross-client-handoff/observation.json": "9072549b36d2852b3c80bc17c82802fae297802b10a01eb203ea98f99119569a",
+    "cross-client-handoff/preflight.json": "ae67c2143edc397e48bd1c814dfef7970f38a512b4c29aa03ff5350d9c422e11",
+    "cross-client-handoff/report.json": "2c3311b0cc5177af46ca25d0b979aa76ad59b061cfa67e18cac7e2f870707d90"
+  },
+  "changes": [
+    {
+      "case_id": "fresh-session-continuation",
+      "old_status": "FAIL",
+      "new_status": "FAIL",
+      "old_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-continuation-token"
+      ],
+      "new_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-continuation-token"
+      ],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": []
+    },
+    {
+      "case_id": "architecture-constraint",
+      "old_status": "FAIL",
+      "new_status": "FAIL",
+      "old_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-single-sqlite-authority"
+      ],
+      "new_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-single-sqlite-authority"
+      ],
+      "old_repo_paths_read": [
+        "src/cache_notes.md"
+      ],
+      "new_repo_paths_read": [
+        "src/cache_notes.md"
+      ]
+    },
+    {
+      "case_id": "known-project-gotcha",
+      "old_status": "FAIL",
+      "new_status": "FAIL",
+      "old_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-do-not-rewrite-latency-snapshots"
+      ],
+      "new_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-do-not-rewrite-latency-snapshots"
+      ],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": []
+    },
+    {
+      "case_id": "indirect-history-dependency",
+      "old_status": "FAIL",
+      "new_status": "FAIL",
+      "old_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-wal-checkpoint-before-backup"
+      ],
+      "new_reasons": [
+        "required_recall_miss",
+        "missing_required_text:fixture-wal-checkpoint-before-backup"
+      ],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": []
+    },
+    {
+      "case_id": "stale-superseded-conflict",
+      "old_status": "FAIL",
+      "new_status": "FAIL",
+      "old_reasons": [
+        "required_recall_miss",
+        "repo_evidence_missing"
+      ],
+      "new_reasons": [
+        "required_recall_miss"
+      ],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": [
+        "NOTES.md"
+      ]
+    },
+    {
+      "case_id": "no-relevant-memory",
+      "old_status": "FAIL",
+      "new_status": "FAIL",
+      "old_reasons": [
+        "required_recall_miss"
+      ],
+      "new_reasons": [
+        "required_recall_miss"
+      ],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": []
+    },
+    {
+      "case_id": "amb-unavailable",
+      "old_status": "FAIL",
+      "new_status": "FAIL",
+      "old_reasons": [
+        "missing_status_phrase"
+      ],
+      "new_reasons": [
+        "missing_status_phrase"
+      ],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": []
+    },
+    {
+      "case_id": "isolated-typo",
+      "old_status": "PASS",
+      "new_status": "PASS",
+      "old_reasons": [],
+      "new_reasons": [],
+      "old_repo_paths_read": [
+        "greeting.py"
+      ],
+      "new_repo_paths_read": [
+        "greeting.py"
+      ]
+    },
+    {
+      "case_id": "repeated-recall",
+      "old_status": "PASS",
+      "new_status": "PASS",
+      "old_reasons": [],
+      "new_reasons": [],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": []
+    },
+    {
+      "case_id": "cross-client-handoff",
+      "old_status": "PASS",
+      "new_status": "PASS",
+      "old_reasons": [],
+      "new_reasons": [],
+      "old_repo_paths_read": [],
+      "new_repo_paths_read": []
+    }
+  ],
+  "old_verdict_counts": {
+    "PASS": 3,
+    "FAIL": 7,
+    "INCONCLUSIVE": 0,
+    "NOT_RUN": 0
+  },
+  "new_verdict_counts": {
+    "PASS": 3,
+    "FAIL": 7,
+    "INCONCLUSIVE": 0,
+    "NOT_RUN": 0
+  },
+  "old_metrics": {
+    "required_recall_hit_rate": {
+      "numerator": 1,
+      "complement": 4,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0.2
+    },
+    "false_activation_rate": {
+      "numerator": 0,
+      "complement": 2,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0
+    },
+    "namespace_resolution_correct_rate": {
+      "numerator": 1,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 1
+    },
+    "useful_hit_rate_given_recall": {
+      "numerator": 1,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 1
+    },
+    "no_hit_correct_rate": {
+      "numerator": 0,
+      "complement": 1,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0
+    },
+    "unavailable_vs_empty_correct_rate": {
+      "numerator": 0,
+      "complement": 1,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0
+    },
+    "stale_memory_misuse_count": 0,
+    "repeated_or_unnecessary_recall_count": 0,
+    "overhead": [
+      {
+        "id": "fresh-session-continuation",
+        "status": "FAIL",
+        "latency_ms": 6187.483,
+        "recall_calls": 0,
+        "input_tokens": 14501,
+        "output_tokens": 77,
+        "pathological_recall": false
+      },
+      {
+        "id": "architecture-constraint",
+        "status": "FAIL",
+        "latency_ms": 16514.61,
+        "recall_calls": 0,
+        "input_tokens": 29545,
+        "output_tokens": 247,
+        "pathological_recall": false
+      },
+      {
+        "id": "known-project-gotcha",
+        "status": "FAIL",
+        "latency_ms": 15787.684,
+        "recall_calls": 0,
+        "input_tokens": 24307,
+        "output_tokens": 127,
+        "pathological_recall": false
+      },
+      {
+        "id": "indirect-history-dependency",
+        "status": "FAIL",
+        "latency_ms": 3230.326,
+        "recall_calls": 0,
+        "input_tokens": 7228,
+        "output_tokens": 27,
+        "pathological_recall": false
+      },
+      {
+        "id": "stale-superseded-conflict",
+        "status": "FAIL",
+        "latency_ms": 9635.64,
+        "recall_calls": 0,
+        "input_tokens": 37438,
+        "output_tokens": 116,
+        "pathological_recall": false
+      },
+      {
+        "id": "no-relevant-memory",
+        "status": "FAIL",
+        "latency_ms": 2579.81,
+        "recall_calls": 0,
+        "input_tokens": 7232,
+        "output_tokens": 10,
+        "pathological_recall": false
+      },
+      {
+        "id": "amb-unavailable",
+        "status": "FAIL",
+        "latency_ms": 7269.224,
+        "recall_calls": 0,
+        "input_tokens": 24289,
+        "output_tokens": 138,
+        "pathological_recall": false
+      },
+      {
+        "id": "isolated-typo",
+        "status": "PASS",
+        "latency_ms": 15567.121,
+        "recall_calls": 0,
+        "input_tokens": 30068,
+        "output_tokens": 156,
+        "pathological_recall": false
+      },
+      {
+        "id": "repeated-recall",
+        "status": "PASS",
+        "latency_ms": 4377.256,
+        "recall_calls": 0,
+        "input_tokens": 7446,
+        "output_tokens": 41,
+        "pathological_recall": false
+      },
+      {
+        "id": "cross-client-handoff",
+        "status": "PASS",
+        "latency_ms": 3587.063,
+        "recall_calls": 1,
+        "input_tokens": 7288,
+        "output_tokens": 8,
+        "pathological_recall": false
+      }
+    ]
+  },
+  "new_metrics": {
+    "required_recall_hit_rate": {
+      "numerator": 1,
+      "complement": 4,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0.2
+    },
+    "false_activation_rate": {
+      "numerator": 0,
+      "complement": 2,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0
+    },
+    "namespace_resolution_correct_rate": {
+      "numerator": 1,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 1
+    },
+    "useful_hit_rate_given_recall": {
+      "numerator": 1,
+      "complement": 0,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 1
+    },
+    "no_hit_correct_rate": {
+      "numerator": 0,
+      "complement": 1,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0
+    },
+    "unavailable_vs_empty_correct_rate": {
+      "numerator": 0,
+      "complement": 1,
+      "inconclusive": 0,
+      "not_run": 0,
+      "rate": 0
+    },
+    "stale_memory_misuse_count": 0,
+    "repeated_or_unnecessary_recall_count": 0,
+    "overhead": [
+      {
+        "id": "fresh-session-continuation",
+        "status": "FAIL",
+        "latency_ms": 6187.483,
+        "recall_calls": 0,
+        "input_tokens": 14501,
+        "output_tokens": 77,
+        "pathological_recall": false
+      },
+      {
+        "id": "architecture-constraint",
+        "status": "FAIL",
+        "latency_ms": 16514.61,
+        "recall_calls": 0,
+        "input_tokens": 29545,
+        "output_tokens": 247,
+        "pathological_recall": false
+      },
+      {
+        "id": "known-project-gotcha",
+        "status": "FAIL",
+        "latency_ms": 15787.684,
+        "recall_calls": 0,
+        "input_tokens": 24307,
+        "output_tokens": 127,
+        "pathological_recall": false
+      },
+      {
+        "id": "indirect-history-dependency",
+        "status": "FAIL",
+        "latency_ms": 3230.326,
+        "recall_calls": 0,
+        "input_tokens": 7228,
+        "output_tokens": 27,
+        "pathological_recall": false
+      },
+      {
+        "id": "stale-superseded-conflict",
+        "status": "FAIL",
+        "latency_ms": 9635.64,
+        "recall_calls": 0,
+        "input_tokens": 37438,
+        "output_tokens": 116,
+        "pathological_recall": false
+      },
+      {
+        "id": "no-relevant-memory",
+        "status": "FAIL",
+        "latency_ms": 2579.81,
+        "recall_calls": 0,
+        "input_tokens": 7232,
+        "output_tokens": 10,
+        "pathological_recall": false
+      },
+      {
+        "id": "amb-unavailable",
+        "status": "FAIL",
+        "latency_ms": 7269.224,
+        "recall_calls": 0,
+        "input_tokens": 24289,
+        "output_tokens": 138,
+        "pathological_recall": false
+      },
+      {
+        "id": "isolated-typo",
+        "status": "PASS",
+        "latency_ms": 15567.121,
+        "recall_calls": 0,
+        "input_tokens": 30068,
+        "output_tokens": 156,
+        "pathological_recall": false
+      },
+      {
+        "id": "repeated-recall",
+        "status": "PASS",
+        "latency_ms": 4377.256,
+        "recall_calls": 0,
+        "input_tokens": 7446,
+        "output_tokens": 41,
+        "pathological_recall": false
+      },
+      {
+        "id": "cross-client-handoff",
+        "status": "PASS",
+        "latency_ms": 3587.063,
+        "recall_calls": 1,
+        "input_tokens": 7288,
+        "output_tokens": 8,
+        "pathological_recall": false
+      }
+    ]
+  },
+  "secondary_host": {
+    "status": "NOT_RUN",
+    "execution_kind": null,
+    "case_ids": [],
+    "contaminated_case_ids": [],
+    "runnable_path": "python ./scripts/run_lifecycle_activation_benchmark.py collect-opencode --case-id known-project-gotcha"
+  },
+  "new_model_calls": 0,
+  "source_provenance": {
+    "collection_date": "2026-10-03",
+    "base_commit": "73529b052f86a285a36f00376b5829b8ef74444e",
+    "source_commit": "bf5f60705e1abfe6eb13163144bb4e7154c36aed",
+    "source_commit_role": "first_preserved_measurement_source_snapshot",
+    "collection_source_commit": null,
+    "collection_source_state": "base_plus_uncommitted_collector_repair",
+    "note": "The source snapshot was committed after native collection; it is not a clean-checkout collection claim."
+  }
+}

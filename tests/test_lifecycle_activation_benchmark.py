@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from tools.evidence._temporary_store import ScopedTemporaryMemoryStore
 from tools.evidence.lifecycle_activation import (
     OPENCODE_STORE_MOUNT,
@@ -983,3 +985,167 @@ def test_collect_opencode_command_is_registered() -> None:
     assert args.command == "collect-opencode"
     assert args.pack == "v2"
     assert args.condition == "plain_mcp_baseline"
+
+
+def test_codex_remote_backend_is_explicit_and_requires_adapter(tmp_path: Path) -> None:
+    import importlib
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    module = importlib.import_module("run_lifecycle_activation_benchmark")
+    args = module._parser().parse_args(
+        ["collect-codex", "--out", str(tmp_path), "--adapter-backend", "remote_loopback"]
+    )
+    assert args.adapter_backend == "remote_loopback"
+    assert (
+        module.collect_codex(
+            "cross-client-handoff", tmp_path, "unused", 1, "v2", "plain_mcp_baseline", "remote_loopback"
+        )
+        == 2
+    )
+
+
+def test_remote_hook_uses_binding_home_and_preserves_jsonl(tmp_path: Path) -> None:
+    import importlib
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    module = importlib.import_module("run_lifecycle_activation_benchmark")
+    client, checkout = tmp_path / "client", tmp_path / "checkout"
+    client.mkdir()
+    checkout.mkdir()
+    bridge = client / "bridge"
+    module._install_adapter_hook(
+        codex_home=client,
+        fixture_repo=checkout,
+        store_home=bridge,
+        python_path=Path(sys.executable),
+        source_mount=ROOT / "src",
+        authority_url="http://127.0.0.1:9/mcp",
+        token_file=bridge / "token",
+        install_project_hooks=False,
+    )
+    capture = client / "hook_capture.py"
+    text = capture.read_text()
+    assert "AGENT_MEMORY_BRIDGE_AUTHORITY_URL" in text
+    assert "AGENT_MEMORY_BRIDGE_HTTP_TOKEN_FILE" in text
+    assert "fixture-store.sqlite" not in text
+    assert not (checkout / ".codex" / "hooks.json").exists()
+    compile(text, str(capture), "exec")
+    payload = json.dumps({"hook_event_name": "SessionStart", "cwd": str(checkout), "session_id": "test"})
+    for _ in range(2):
+        completed = subprocess.run(
+            [sys.executable, str(capture)], input=payload, text=True, capture_output=True, timeout=20
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert json.loads(completed.stdout)["continue"] is True
+    records = module._adapter_records(bridge)
+    assert len(records) == 2
+    responses = (bridge / "lifecycle" / "hook-responses.jsonl").read_text().splitlines()
+    assert len(responses) == 2
+    assert all(json.loads(row)["returncode"] == 0 for row in responses)
+
+
+def test_fixture_http_server_uses_current_supported_cli(tmp_path: Path) -> None:
+    import importlib
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    module = importlib.import_module("run_lifecycle_activation_benchmark")
+    case = load_pack(version="v2")["cases"][-1]
+    checkout, store_home = tmp_path / "checkout", tmp_path / "store"
+    materialize_fixture(case, checkout)
+    from tools.evidence.lifecycle_activation import bind_fixture_namespace, git_commit_fixture
+
+    git_commit_fixture(checkout)
+    bind_fixture_namespace(case, checkout, store_home)
+    from agent_mem_bridge.filesystem_safety import inspect_filesystem, require_local_database
+
+    database = store_home / "fixture-store.sqlite"
+    filesystem = inspect_filesystem(database)
+    if filesystem["classification"] != "local":
+        # Hardened serve intentionally rejects unknown storage (including hosts
+        # without Linux mountinfo). Do not weaken that contract for this fixture.
+        with pytest.raises(ValueError, match="requires a known local filesystem"):
+            require_local_database(database)
+        pytest.skip(f"native fixture HTTP startup requires known-local storage: {filesystem['classification']}")
+    process, url, token = module._start_fixture_http(store_home, Path(sys.executable))
+    try:
+        assert process.poll() is None
+        assert url.startswith("http://127.0.0.1:") and url.endswith("/mcp")
+        assert token.is_file()
+    finally:
+        module._stop_process(process)
+    assert process.poll() is not None
+
+
+@pytest.mark.parametrize("classification", ["unknown", "network"])
+def test_fixture_http_native_startup_requires_local_capability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, classification: str
+) -> None:
+    import importlib
+
+    import agent_mem_bridge.filesystem_safety as safety
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    runner = importlib.import_module("run_lifecycle_activation_benchmark")
+    monkeypatch.setattr(
+        safety, "inspect_filesystem", lambda path: {"classification": classification, "filesystem_type": None}
+    )
+    monkeypatch.setattr(
+        runner, "_start_fixture_http", lambda *args: pytest.fail("unsupported native startup attempted")
+    )
+    with pytest.raises(pytest.skip.Exception, match=f"known-local storage: {classification}"):
+        test_fixture_http_server_uses_current_supported_cli(tmp_path)
+
+
+@pytest.mark.parametrize("case_id", ["cross-client-handoff", "amb-unavailable"])
+def test_remote_collector_hides_store_before_native_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case_id: str
+) -> None:
+    import importlib
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    module = importlib.import_module("run_lifecycle_activation_benchmark")
+    layout = prepare_collector_layout(
+        store_root=tmp_path / "stores",
+        client_root=tmp_path / "clients",
+        workspace_root=tmp_path / "workspaces",
+    )
+    monkeypatch.setattr(module, "prepare_collector_layout", lambda **kwargs: layout)
+    monkeypatch.setattr(module, "_bridge_python", lambda: pytest.fail("stale client interpreter was used"))
+    monkeypatch.setattr(module, "_codex_native", lambda: tmp_path / "native")
+    monkeypatch.setattr(module, "_node_prefix", lambda native: tmp_path / "node")
+    monkeypatch.setattr(module, "_model_gateway", lambda: ("test-only-key", "http://127.0.0.1:8317/v1"))
+    monkeypatch.setattr(module, "_command_version", lambda command: "test")
+    monkeypatch.setattr(module, "_require_bwrap", lambda: tmp_path / "bwrap")
+    server = object()
+    stopped = []
+
+    def start(store_home: Path, python_path: Path):
+        assert python_path == Path(sys.executable)
+        assert store_home == layout["store_home"]
+        token = store_home / "http-token"
+        token.write_text("fixture-only-token")
+        return server, "http://127.0.0.1:12345/mcp", token
+
+    monkeypatch.setattr(module, "_start_fixture_http", start)
+    monkeypatch.setattr(module, "_stop_process", lambda process: stopped.append(process))
+
+    def probe(**kwargs):
+        store = layout["store_home"]
+        assert all(source != store for source, dest in kwargs["ro_binds"] + kwargs["rw_binds"])
+        assert store in kwargs["protected"] and store in kwargs["absent"]
+        assert store / "fixture-store.sqlite" in kwargs["absent"]
+        assert (Path(sys.executable).parent.parent, Path("/opt/amb-lifecycle-python")) in kwargs["ro_binds"]
+        bridge = layout["codex_home"] / "bridge"
+        assert (bridge / "repository" / "bindings.json").is_file()
+        assert not (bridge / "fixture-store.sqlite").exists()
+        assert not (bridge / "config.toml").exists()
+        assert not (layout["fixture_repo"] / ".codex" / "hooks.json").exists()
+        wrapper = (layout["codex_home"] / "hook_capture.py").read_text()
+        assert "AGENT_MEMORY_BRIDGE_AUTHORITY_URL" in wrapper
+        assert str(store) not in wrapper
+        # Force an evidence hold, so this unit check never invokes a model.
+        return {"visible": ["forced-test-hold"], "hits": [], "nested": {"ok": True}}
+
+    monkeypatch.setattr(module, "_probe_isolation", probe)
+    assert module.collect_codex(case_id, tmp_path / "out", "unused", 1, "v2", "adapter_enabled", "remote_loopback") == 1
+    assert stopped == [server if case_id == "cross-client-handoff" else None]
