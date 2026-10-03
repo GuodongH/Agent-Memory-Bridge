@@ -16,13 +16,17 @@ _DECISION_MARKERS = (
     "decided previously",
     "prior decision",
     "previous decision",
+    "settled approach",
+    "approach we settled",
     "recorded constraint",
+    "recorded approach",
     "project rule",
     "project constraint",
 )
 _FRESH_SESSION_MARKERS = (
     "fresh session",
     "new session",
+    "start fresh",
     "handoff",
     "compaction",
     "pick up",
@@ -33,6 +37,8 @@ _FRESH_SESSION_MARKERS = (
 _ARCHITECTURE_MARKERS = (
     "architecture",
     "schema",
+    "storage authority",
+    "storage-authority",
     "new table",
     "run ledger",
     "durable authority",
@@ -42,6 +48,7 @@ _ARCHITECTURE_MARKERS = (
     "governance",
 )
 _GOTCHA_MARKERS = (
+    "gotcha",
     "same failure",
     "same gotcha",
     "hit this same",
@@ -63,10 +70,22 @@ _CONFLICT_MARKERS = (
     "conflict",
     "setup --force",
 )
+_CURRENT_STATE_MARKERS = (
+    "current port",
+    "current listener",
+    "current configuration",
+    "current setting",
+)
+_RECORDED_PROJECT_QUERY_MARKERS = (
+    "recorded for this project",
+    "recorded in this project",
+    "recorded project exception",
+)
 _TRIVIAL_MARKERS = (
     "misspelled",
     "typo",
     "formatting",
+    "punctuation",
     "import fix",
     "run formatting",
     "deterministic",
@@ -77,6 +96,8 @@ _MUST_MARKERS = (
     *_ARCHITECTURE_MARKERS,
     *_GOTCHA_MARKERS,
     *_INDIRECT_HISTORY_MARKERS,
+    *_CURRENT_STATE_MARKERS,
+    *_RECORDED_PROJECT_QUERY_MARKERS,
 )
 
 
@@ -91,11 +112,17 @@ def classify_task_need(prompt: str) -> tuple[str, str]:
     text = " ".join(prompt.lower().split())
     if not text:
         return "skip", "no-material-history-need"
-    trivial = any(marker in text for marker in _TRIVIAL_MARKERS) and not any(marker in text for marker in _MUST_MARKERS)
+    recorded_project_query = "recorded" in text and "project" in text and ("token" in text or "exception" in text)
+    has_material_history = any(marker in text for marker in _MUST_MARKERS) or recorded_project_query
+    trivial = any(marker in text for marker in _TRIVIAL_MARKERS) and not has_material_history
     if trivial:
         return "skip", "not-for-deterministic-edit"
     if any(marker in text for marker in _CONFLICT_MARKERS):
         return "reconcile", "live-history-conflict"
+    if any(marker in text for marker in _CURRENT_STATE_MARKERS):
+        return "reconcile", "current-state-history-dependency"
+    if recorded_project_query:
+        return "recall", "recorded-project-context"
     if any(marker in text for marker in _INDIRECT_HISTORY_MARKERS):
         return "recall", "indirect-history-reference"
     if any(marker in text for marker in _GOTCHA_MARKERS):
