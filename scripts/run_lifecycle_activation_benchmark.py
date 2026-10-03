@@ -2,14 +2,10 @@ from __future__ import annotations
 # ruff: noqa: E402, I001
 
 import argparse
-from collections import defaultdict, deque
-import hashlib
 import json
 import os
 import secrets
-import shlex
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
@@ -66,8 +62,6 @@ from tools.evidence.lifecycle_activation import (
     seed_case_memories,
     verify_freeze,
 )
-
-CODEX_STORE_MOUNT = Path("/opt/amb-lifecycle-store")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -384,10 +378,6 @@ def collect_codex(
     if pack_version == "v2":
         git_commit_fixture(fixture_repo)
         bind_fixture_namespace(case, fixture_repo, store_home)
-        if condition == "adapter_enabled" and case["fixture"]["amb_mode"] == "unavailable":
-            # A missing DB means unconfigured/unknown, not backend failure. Use
-            # a genuinely failing local authority for this frozen error lane.
-            (store_home / "fixture-store.sqlite").write_bytes(b"unavailable local SQLite fixture\n")
     else:
         config_path.write_text('[bridge]\ndb_path = "fixture-store.sqlite"\n', encoding="utf-8")
         if case["fixture"]["amb_mode"] == "available":
@@ -396,7 +386,6 @@ def collect_codex(
                 seed_case_memories(store, case)
             finally:
                 store.close()
-    durable_before = _fixture_memory_digest(store_home)
     codex_home.mkdir(parents=True, exist_ok=True)
     codex_home.chmod(0o700)
     server: subprocess.Popen[str] | None = None
@@ -440,7 +429,7 @@ def collect_codex(
             _install_adapter_hook(
                 codex_home=codex_home,
                 fixture_repo=fixture_repo,
-                store_home=CODEX_STORE_MOUNT if adapter_backend == "local" else bridge_home,
+                store_home=bridge_home,
                 python_path=hook_python,
                 source_mount=Path("/opt/amb-lifecycle-src"),
                 authority_url=authority_url,
@@ -483,13 +472,6 @@ def collect_codex(
             fixture_repo=str(fixture_repo),
             plugins=condition == "adapter_enabled",
         )
-        if condition == "adapter_enabled":
-            preamble += _codex_fixture_permissions(
-                sandbox=sandbox_for_case(case_id),
-                codex_home=codex_home,
-                fixture_repo=fixture_repo,
-                source_mount=Path("/opt/amb-lifecycle-src"),
-            )
         (codex_home / "config.toml").write_text(preamble + codex_config, encoding="utf-8")
         native = _codex_native()
         node_prefix = _node_prefix(native)
@@ -515,7 +497,7 @@ def collect_codex(
         if condition == "adapter_enabled":
             ro_binds.append((ROOT / "src", source_mount))
             if adapter_backend == "local":
-                rw_binds.append((store_home, CODEX_STORE_MOUNT))
+                rw_binds.append((store_home, store_home))
             else:
                 protected.append(store_home)
                 absent.extend([store_home, store_home / "fixture-store.sqlite"])
@@ -568,25 +550,10 @@ def collect_codex(
                 file=sys.stderr,
             )
             return 1
-        if condition == "adapter_enabled":
-            tool_probe = _probe_codex_tool_access(
-                native=native,
-                bwrap=bwrap,
-                codex_home=codex_home,
-                fixture_repo=fixture_repo,
-                ro_binds=ro_binds,
-                rw_binds=rw_binds,
-                protected=protected,
-                denied=[CODEX_STORE_MOUNT, codex_home, source_mount, fixture_repo / ".codex"],
-            )
-            (out_dir / "tool-preflight.json").write_text(json.dumps(tool_probe, indent=2) + "\n", encoding="utf-8")
-            if not tool_probe["ok"]:
-                print(json.dumps({"ok": False, "status": "TOOL_ISOLATION_PREFLIGHT_FAILED", **tool_probe}))
-                return 1
         started = time.perf_counter()
         env = {
             "PATH": f"{node_prefix / 'bin'}:/usr/bin:/bin",
-            "HOME": "/tmp",
+            "HOME": str(codex_home),
             "CODEX_HOME": str(codex_home),
             "TMPDIR": "/tmp",
             "LANG": os.environ.get("LANG", "C.UTF-8"),
@@ -605,7 +572,6 @@ def collect_codex(
             codex_bin=str(native),
             config_overrides=[override, *hook_overrides],
             condition=condition,
-            permission_profile="amb-benchmark" if condition == "adapter_enabled" else None,
         )
         if "--add-dir" in argv or str(store_home) in argv or ":58080" in " ".join(argv):
             print("collector argv exposes the fixture store or production AMB", file=sys.stderr)
@@ -648,7 +614,7 @@ def collect_codex(
         fixture_access = assess_fixture_access(
             parsed["commands"],
             markers=markers,
-            hidden_paths=[str(store_home), str(CODEX_STORE_MOUNT), str(codex_home), str(source_mount), "fixture-store.sqlite"],
+            hidden_paths=[str(store_home), "fixture-store.sqlite"],
         )
         observation = _redact_obj(
             {
@@ -678,8 +644,6 @@ def collect_codex(
                 "collector_exit_code": returncode,
                 "freeze_sha256": freeze["actual"],
                 "scorer_sha256": scorer_sha256(),
-                "source_sha256": _source_sha256(),
-                "durable_memory_unchanged": durable_before == _fixture_memory_digest(store_home),
                 "adapter": _adapter_observation(bridge_home) if condition == "adapter_enabled" else {"loaded": False},
                 "adapter_evidence": _adapter_evidence(bridge_home) if condition == "adapter_enabled" else [],
             },
@@ -900,114 +864,6 @@ def _opencode_probe_rw_binds(layout: dict[str, Path], store_home: Path, conditio
     return binds
 
 
-def _codex_fixture_permissions(*, sandbox: str, codex_home: Path, fixture_repo: Path, source_mount: Path) -> str:
-    """Deny model tools access to the store and collector, not the trusted hook.
-
-    A legacy --sandbox argument overrides these permissions. The collector must
-    select this profile instead, and verify it with a real native sandbox probe.
-    """
-    parent = ":workspace" if sandbox == "workspace-write" else ":read-only"
-    lines = [
-        "\n[permissions.amb-benchmark]",
-        f"extends = {json.dumps(parent)}",
-        "[permissions.amb-benchmark.filesystem]",
-    ]
-    # Exact denials preserve the built-in workspace/.git protections. Hooks run
-    # in the trusted host process and can still use these private fixture paths.
-    for path in (CODEX_STORE_MOUNT, codex_home, source_mount, fixture_repo / ".codex"):
-        lines.append(f'{json.dumps(str(path))} = "deny"')
-    lines.extend(["[permissions.amb-benchmark.network]", "enabled = false", ""])
-    return "\n".join(lines)
-
-
-def _probe_codex_tool_access(
-    *,
-    native: Path,
-    bwrap: Path,
-    codex_home: Path,
-    fixture_repo: Path,
-    ro_binds: list[tuple[Path, Path]],
-    rw_binds: list[tuple[Path, Path]],
-    protected: list[Path],
-    denied: list[Path],
-) -> dict:
-    # Read actual files, not just a permission-profile field or directory name.
-    targets = [
-        CODEX_STORE_MOUNT / "config.toml",
-        CODEX_STORE_MOUNT / "fixture-store.sqlite",
-        codex_home / "hook_capture.py",
-        codex_home / "config.toml",
-        denied[2] / "agent_mem_bridge" / "lifecycle_activation.py",
-        fixture_repo / ".codex" / "hooks.json",
-    ]
-    code = (
-        "import json, sys; from pathlib import Path\n"
-        "readable=[]\n"
-        "for name in sys.argv[1:-1]:\n"
-        "    try: Path(name).read_bytes(); readable.append(name)\n"
-        "    except OSError: pass\n"
-        "workspace_ok=Path(sys.argv[-1]).is_dir()\n"
-        "print(json.dumps({'ok': not readable and workspace_ok, 'readable': readable, 'workspace_ok': workspace_ok}))\n"
-    )
-    command = [
-        str(native),
-        "sandbox",
-        "-P",
-        "amb-benchmark",
-        "-C",
-        str(fixture_repo),
-        "--",
-        "/usr/bin/python3",
-        "-c",
-        code,
-        *map(str, targets),
-        str(fixture_repo),
-    ]
-    isolated = build_allowlisted_filesystem_argv(
-        bwrap=bwrap,
-        ro_binds=ro_binds,
-        rw_binds=rw_binds,
-        command=command,
-        protected_paths=protected,
-    )
-    completed = subprocess.run(
-        isolated,
-        env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "CODEX_HOME": str(codex_home), "LANG": "C.UTF-8"},
-        cwd=fixture_repo,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=30,
-    )
-    if completed.returncode != 0:
-        return {"ok": False, "exit_code": completed.returncode, "error": _sanitize(completed.stderr)[-500:]}
-    try:
-        return json.loads(completed.stdout.strip().splitlines()[-1])
-    except (json.JSONDecodeError, IndexError):
-        return {"ok": False, "error": "native sandbox probe produced no valid result"}
-
-
-def _source_sha256() -> dict[str, str]:
-    paths = [
-        ROOT / "scripts/run_lifecycle_activation_benchmark.py",
-        ROOT / "tools/evidence/lifecycle_activation.py",
-        *sorted((ROOT / "src/agent_mem_bridge").glob("*.py")),
-    ]
-    return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
-
-
-def _fixture_memory_digest(store_home: Path) -> str | None:
-    path = store_home / "fixture-store.sqlite"
-    if not path.is_file():
-        return None
-    try:
-        with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as connection:
-            rows = connection.execute("SELECT * FROM memories ORDER BY id").fetchall()
-    except sqlite3.DatabaseError:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    return hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
-
-
 def _install_adapter_hook(
     *,
     codex_home: Path,
@@ -1028,7 +884,6 @@ def _install_adapter_hook(
                 "import json, os, subprocess, sys",
                 "from pathlib import Path",
                 "payload = sys.stdin.read()",
-                "event = json.loads(payload)",
                 "env = os.environ.copy()",
                 f"env['PYTHONPATH'] = {str(source_mount)!r}",
                 f"env['AGENT_MEMORY_BRIDGE_HOME'] = {str(store_home)!r}",
@@ -1043,7 +898,7 @@ def _install_adapter_hook(
                 f"log = Path({str(log_path)!r})",
                 "log.parent.mkdir(parents=True, exist_ok=True)",
                 "with log.open('a', encoding='utf-8') as handle:",
-                "    handle.write(json.dumps({'session_id': event.get('session_id'), 'hook_event_name': event.get('hook_event_name'), 'returncode': completed.returncode, 'stdout': completed.stdout}) + chr(10))",
+                "    handle.write(json.dumps({'returncode': completed.returncode, 'stdout': completed.stdout}) + chr(10))",
                 "sys.stdout.write(completed.stdout)",
                 "raise SystemExit(completed.returncode)",
                 "",
@@ -1051,7 +906,7 @@ def _install_adapter_hook(
         ),
         encoding="utf-8",
     )
-    command = shlex.join(["/usr/bin/python3", str(capture)])
+    command = f"/usr/bin/python3 {capture}"
     if not install_project_hooks:
         return
     document = {
@@ -1088,8 +943,7 @@ def _adapter_records(store_home: Path) -> list[dict]:
             continue
         if isinstance(item, dict):
             records.append(item)
-    contexts: dict[tuple[str, str], deque[str]] = defaultdict(deque)
-    legacy_contexts: deque[str] = deque()
+    texts: list[str] = []
     log_path = store_home / "lifecycle" / "hook-responses.jsonl"
     if log_path.is_file():
         for line in log_path.read_text(encoding="utf-8").splitlines():
@@ -1104,19 +958,13 @@ def _adapter_records(store_home: Path) -> list[dict]:
                 payload = {}
             specific = payload.get("hookSpecificOutput") if isinstance(payload, dict) else None
             context = specific.get("additionalContext") if isinstance(specific, dict) else ""
-            context = context if isinstance(context, str) else ""
-            if isinstance(item, dict) and isinstance(item.get("session_id"), str) and item.get("hook_event_name"):
-                contexts[(item["session_id"], item["hook_event_name"])].append(context)
-            else:
-                # Older serial collector logs contain one response per event,
-                # including empty responses. Never pair only nonempty contexts
-                # with recall rows: compaction can inject context without recall.
-                legacy_contexts.append(context)
+            if isinstance(context, str) and context:
+                texts.append(context)
+    text_index = 0
     for record in records:
-        responses = contexts[(str(record.get("session_id") or ""), str(record.get("hook_event_name") or ""))]
-        context = responses.popleft() if responses else legacy_contexts.popleft() if legacy_contexts else ""
-        if context or record.get("recall_invoked") is True:
-            record["result_text"] = context
+        if record.get("recall_invoked") is True:
+            record["result_text"] = texts[text_index] if text_index < len(texts) else ""
+            text_index += 1
     return records
 
 

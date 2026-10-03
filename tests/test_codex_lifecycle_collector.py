@@ -12,7 +12,6 @@ import pytest
 
 from tools.evidence.lifecycle_activation import (
     bind_fixture_namespace,
-    build_codex_collect_argv,
     git_commit_fixture,
     load_pack,
     materialize_fixture,
@@ -26,15 +25,15 @@ ROOT = Path(__file__).resolve().parents[1]
 def collector(monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / "scripts"))
     spec = importlib.util.spec_from_file_location(
-        "codex_collector", ROOT / "scripts/run_lifecycle_activation_benchmark.py"
+        "codex_collector", ROOT / "scripts/run_codex_lifecycle_activation_benchmark.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_permission_profile_is_not_overridden_by_legacy_sandbox() -> None:
-    argv = build_codex_collect_argv(
+def test_permission_profile_is_not_overridden_by_legacy_sandbox(collector) -> None:
+    argv = collector._build_codex_collect_argv(
         sandbox="workspace-write",
         model="fixture-model",
         fixture_repo=Path("/fixture"),
@@ -65,6 +64,8 @@ def test_profile_denies_private_paths_but_preserves_builtin_safety(collector, sa
 
 
 def test_hook_uses_guest_store_path_and_quotes_space_path(collector, tmp_path) -> None:
+    assert str(collector.CODEX_STORE_MOUNT) == "/opt/amb-lifecycle-store"
+    assert str(collector.CODEX_STORE_MOUNT / "config.toml") == "/opt/amb-lifecycle-store/config.toml"
     client, repo = tmp_path / "client with spaces", tmp_path / "repo"
     client.mkdir()
     repo.mkdir()
@@ -85,23 +86,76 @@ def test_hook_uses_guest_store_path_and_quotes_space_path(collector, tmp_path) -
     ]
 
 
-def test_null_namespace_control_does_not_bind_string_none(tmp_path) -> None:
+def test_null_namespace_control_does_not_bind_string_none(collector, tmp_path) -> None:
     case = next(item for item in load_pack(version="v2")["cases"] if item["id"] == "isolated-typo")
     repo, home = tmp_path / "repo", tmp_path / "home"
     materialize_fixture(case, repo)
     git_commit_fixture(repo)
-    assert bind_fixture_namespace(case, repo, home)
+    assert collector._bind_codex_fixture_namespace(case, repo, home)
+    assert (home / "config.toml").is_file()
+    assert (home / "fixture-store.sqlite").is_file()
     assert not (home / "repository/bindings.json").exists()
 
 
 def test_source_receipt_includes_edited_policy_and_resolver(collector) -> None:
     identity = collector._source_sha256()
+    assert all("\\" not in path for path in identity)
     for path in (
+        "scripts/run_codex_lifecycle_activation_benchmark.py",
         "src/agent_mem_bridge/activation_policy.py",
         "src/agent_mem_bridge/lifecycle_activation.py",
         "src/agent_mem_bridge/project_resolution.py",
     ):
         assert len(identity[path]) == 64
+
+
+def test_repaired_entrypoint_selects_repaired_codex_collector(collector, tmp_path, monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(collector, "collect_codex", lambda *args: calls.append(args) or 0)
+    assert (
+        collector.main(
+            [
+                "collect-codex",
+                "--pack",
+                "v2",
+                "--condition",
+                "adapter_enabled",
+                "--adapter-backend",
+                "remote_loopback",
+                "--measurement-revision",
+                "codex-repo-read-v1",
+                "--case-id",
+                "known-project-gotcha",
+                "--out",
+                str(tmp_path),
+                "--model",
+                "gpt-6-luna",
+                "--timeout",
+                "150",
+            ]
+        )
+        == 0
+    )
+    assert calls == [
+        (
+            "known-project-gotcha",
+            tmp_path,
+            "gpt-6-luna",
+            150.0,
+            "v2",
+            "adapter_enabled",
+            "remote_loopback",
+            "codex-repo-read-v1",
+        )
+    ]
+
+
+def test_repaired_entrypoint_retains_canonical_rescore_dispatch(collector, monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(collector.canonical, "main", lambda args: calls.append(args) or 0)
+    argv = ["rescore-codex", "--evidence-root", "fixture-live", "--out", "fixture-rescore"]
+    assert collector.main(argv) == 0
+    assert calls == [argv]
 
 
 def test_broken_local_authority_is_error_not_empty_or_unconfigured(collector, tmp_path, monkeypatch) -> None:

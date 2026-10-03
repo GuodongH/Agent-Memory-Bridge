@@ -382,7 +382,6 @@ def build_codex_collect_argv(
     codex_bin: str = "codex",
     config_overrides: list[str] | None = None,
     condition: str = "plain_mcp_baseline",
-    permission_profile: str | None = None,
 ) -> list[str]:
     if sandbox not in {"read-only", "workspace-write"}:
         raise ValueError(f"unsupported sandbox {sandbox}")
@@ -403,11 +402,8 @@ def build_codex_collect_argv(
             "--skip-git-repo-check",
             "--ignore-rules",
             *mode_flags,
-            *(
-                ["-c", f"default_permissions={_quote_toml_basic(permission_profile)}"]
-                if permission_profile
-                else ["-s", sandbox]
-            ),
+            "-s",
+            sandbox,
             "-C",
             str(fixture_repo),
             "-m",
@@ -842,11 +838,8 @@ def bind_fixture_namespace(case: dict[str, Any], checkout: Path, bridge_home: Pa
             seed_case_memories(store, case)
         finally:
             store.close()
-    namespace = case.get("expected_namespace")
-    if namespace is None:
-        return repository_id
     binding = RepositorySnapshotStore(bridge_home / "repository").bind_namespace(
-        namespace,
+        str(case["expected_namespace"]),
         repository_id,
     )
     if binding["repository_id"] != repository_id:
