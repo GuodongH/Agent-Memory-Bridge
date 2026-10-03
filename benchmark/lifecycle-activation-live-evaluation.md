@@ -4,6 +4,9 @@ The 2026-10-03 Codex collection completed all ten frozen v2 cases: **3 PASS,
 7 FAIL, 0 INCONCLUSIVE**. The benchmark instrument passed; lifecycle activation
 did not. This is an authored summary of private live artifacts, not a checked-in
 raw trace or a release acceptance record.
+The [sanitized evidence anchor](lifecycle-activation-codex-2026-10-03.anchor.json)
+now retains the collection identity, private input digests and paired results in
+Git. Raw traces remain private and are still needed for independent reproduction.
 
 v0.35.0 is on owner-directed **release hold**. The seven activation failures are
 product repair evidence for #51; they do not make the completed measurement
@@ -71,6 +74,15 @@ grader SHA-256 starts `61683f3a7f87`. See
 [the versioned contract](lifecycle-activation-codex-repo-read-v1.md) for supported
 read shapes and source-freeze requirements. This correction does not establish
 improved activation policy; that needs fresh #51 trials.
+
+The separately frozen [cohort binding](lifecycle-activation-codex-cohort-v1.md)
+also requires every observation to agree on Codex version/model, condition,
+adapter backend and hook loading. It writes that identity to the manifest and
+revised report. `--expected-anchor` additionally requires the historical identity
+and all 40 original hashes before any re-score output is written. The checked-in
+anchor identifies `bf5f60705e1abfe6eb13163144bb4e7154c36aed` as the first preserved
+measurement-source snapshot, committed after collection; it does not claim the
+native run used that commit as a clean checkout. No new model calls were made.
 
 ## Separate metrics
 

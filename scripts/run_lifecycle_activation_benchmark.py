@@ -23,8 +23,8 @@ from tools.evidence.lifecycle_activation_measurement import (
     READ_REVISION,
     REVISIONS,
     measurement_identity,
-    rescore_codex,
 )
+from tools.evidence.lifecycle_activation_cohort import rescore_codex
 from tools.evidence.lifecycle_activation import (
     ROOT,
     assess_fixture_access,
@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "rescore-codex":
         try:
-            manifest = rescore_codex(args.evidence_root, args.out)
+            manifest = rescore_codex(args.evidence_root, args.out, expected_anchor=args.expected_anchor)
         except (ValueError, OSError) as exc:
             print(json.dumps({"ok": False, "reason": str(exc)}), file=sys.stderr)
             return 1
@@ -1068,6 +1068,7 @@ def _parser() -> argparse.ArgumentParser:
     rescore = subparsers.add_parser("rescore-codex", help="Source-bound re-score of all ten saved v2 Codex traces.")
     rescore.add_argument("--evidence-root", type=Path, required=True)
     rescore.add_argument("--out", type=Path, required=True)
+    rescore.add_argument("--expected-anchor", type=Path, help="Pin collection identity and all original source hashes.")
     opencode = subparsers.add_parser("collect-opencode", help="Run one isolated OpenCode case and score its trace.")
     opencode.add_argument("--case-id", default="known-project-gotcha")
     opencode.add_argument("--pack", choices=("v2",), default="v2")

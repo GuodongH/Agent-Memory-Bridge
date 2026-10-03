@@ -17,6 +17,8 @@ from tools.evidence.lifecycle_activation import (
     scorer_sha256,
     verify_freeze,
 )
+from tools.evidence.lifecycle_activation_cohort import binding_identity
+from tools.evidence.lifecycle_activation_cohort import rescore_codex as rescore_bound_cohort
 from tools.evidence.lifecycle_activation_measurement import (
     READ_REVISION,
     measurement_identity,
@@ -255,3 +257,206 @@ def test_score_command_preserves_revision_and_rejects_mixed_cohort(tmp_path: Pat
         == 2
     )
     assert not rejected.exists()
+
+
+def _saved_cohort(root: Path) -> None:
+    _saved_inputs(root)
+    for case in load_pack(version="v2")["cases"]:
+        path = root / case["id"] / "observation.json"
+        observation = json.loads(path.read_text())
+        observation.update(adapter_backend="remote_loopback", hook_loading="invocation_inline")
+        path.write_text(json.dumps(observation))
+
+
+def test_bound_rescore_retains_identity_history_and_sanitizes_anchor(tmp_path: Path) -> None:
+    source, out = tmp_path / "private-source", tmp_path / "new"
+    _saved_cohort(source)
+    path = source / "cross-client-handoff" / "observation.json"
+    observation = json.loads(path.read_text())
+    observation.update(private_path="/private/user/source", credential="PRIVATE-CREDENTIAL-MARKER")
+    path.write_text(json.dumps(observation))
+    original = {str(path.relative_to(source)): path.read_bytes() for path in source.rglob("*") if path.is_file()}
+    manifest = rescore_bound_cohort(source, out)
+    report = json.loads((out / "report.json").read_text())
+    anchor = json.loads((out / "evidence-anchor.json").read_text())
+    assert manifest["collection_identity"] == report["collection_identity"] == anchor["collection_identity"]
+    assert manifest["collection_identity"]["host"] == {"id": "codex", "version": "test", "model": "test"}
+    assert manifest["collection_binding"] == report["collection_binding"] == binding_identity()
+    assert manifest["measurement"] == measurement_identity()
+    assert anchor["new_model_calls"] == 0 and len(anchor["source_sha256"]) == 40
+    assert anchor["old_verdict_counts"] == anchor["new_verdict_counts"]
+    assert anchor["old_metrics"] == anchor["new_metrics"]
+    assert anchor["secondary_host"]["status"] == "NOT_RUN" and anchor["secondary_host"]["runnable_path"]
+    assert "PRIVATE-CREDENTIAL-MARKER" not in json.dumps(anchor)
+    assert "/private/user/source" not in json.dumps(anchor) and str(source) not in json.dumps(anchor)
+    assert original == {
+        str(path.relative_to(source)): path.read_bytes() for path in source.rglob("*") if path.is_file()
+    }
+    # The added binding does not rewrite the original aggregate report.
+    legacy_out = tmp_path / "legacy"
+    rescore_codex(source, legacy_out)
+    assert (out / "old-report.json").read_bytes() == (legacy_out / "old-report.json").read_bytes()
+    pinned = tmp_path / "pinned"
+    rescore_bound_cohort(source, pinned, expected_anchor=out / "evidence-anchor.json")
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("host.id", "opencode"),
+        ("host.version", "codex-cli 0.999.0"),
+        ("host.model", "another-model"),
+        ("condition", "plain_mcp_baseline"),
+        ("adapter_backend", "local"),
+        ("hook_loading", "project_hooks"),
+        ("pack", "v1"),
+        ("freeze_sha256", {}),
+        ("scorer_sha256", "wrong"),
+        ("execution_kind", "synthetic"),
+        ("adapter_backend", []),
+        ("hook_loading", {}),
+    ],
+)
+def test_mixed_or_invalid_collection_fails_before_output(tmp_path: Path, field: str, value: object) -> None:
+    source, out = tmp_path / "live", tmp_path / "out"
+    _saved_cohort(source)
+    path = source / "stale-superseded-conflict" / "observation.json"
+    observation = json.loads(path.read_text())
+    if field.startswith("host."):
+        observation["host"][field.removeprefix("host.")] = value
+    else:
+        observation[field] = value
+    path.write_text(json.dumps(observation))
+    with pytest.raises(ValueError):
+        rescore_bound_cohort(source, out)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("field", ["host.version", "host.model", "condition", "adapter_backend", "hook_loading"])
+def test_missing_collection_metadata_is_not_inferred(tmp_path: Path, field: str) -> None:
+    source, out = tmp_path / "live", tmp_path / "out"
+    _saved_cohort(source)
+    path = source / "fresh-session-continuation" / "observation.json"
+    observation = json.loads(path.read_text())
+    if field.startswith("host."):
+        observation["host"].pop(field.removeprefix("host."))
+    else:
+        observation.pop(field)
+    path.write_text(json.dumps(observation))
+    with pytest.raises(ValueError):
+        rescore_bound_cohort(source, out)
+    assert not out.exists()
+
+
+def test_expected_anchor_rejects_consistently_changed_model_and_sources(tmp_path: Path) -> None:
+    source, first = tmp_path / "live", tmp_path / "first"
+    _saved_cohort(source)
+    rescore_bound_cohort(source, first)
+    expected = first / "evidence-anchor.json"
+    for case in load_pack(version="v2")["cases"]:
+        path = source / case["id"] / "observation.json"
+        observation = json.loads(path.read_text())
+        observation["host"]["model"] = "consistent-future-model"
+        path.write_text(json.dumps(observation))
+    out = tmp_path / "refused"
+    with pytest.raises(ValueError, match="expected collection/source anchor mismatch"):
+        rescore_bound_cohort(source, out, expected_anchor=expected)
+    assert not out.exists()
+    # A new, internally consistent cohort remains supported without a historical pin.
+    rescore_bound_cohort(source, tmp_path / "future")
+
+
+def test_changed_binding_freeze_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_read = Path.read_bytes
+
+    def changed(path: Path) -> bytes:
+        content = real_read(path)
+        return content + b"changed" if path.name == "lifecycle_activation_cohort.py" else content
+
+    monkeypatch.setattr(Path, "read_bytes", changed)
+    with pytest.raises(ValueError, match="collection binding source freeze mismatch"):
+        binding_identity()
+
+
+def test_rescore_cli_binds_collection_and_rejects_changed_bytes(tmp_path: Path) -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    runner = importlib.import_module("run_lifecycle_activation_benchmark")
+    source, first = tmp_path / "live", tmp_path / "first"
+    _saved_cohort(source)
+    assert runner.main(["rescore-codex", "--evidence-root", str(source), "--out", str(first)]) == 0
+    report = json.loads((first / "report.json").read_text())
+    assert report["collection_identity"]["adapter_backend"] == "remote_loopback"
+    # Harmless metadata preserves identity and legacy scoring, but changes the
+    # exact historical input. The pin must reject it independently of the grader.
+    path = source / "cross-client-handoff" / "preflight.json"
+    preflight = json.loads(path.read_text())
+    preflight["extra"] = "changed bytes"
+    path.write_text(json.dumps(preflight))
+    rejected = tmp_path / "rejected"
+    assert (
+        runner.main(
+            [
+                "rescore-codex",
+                "--evidence-root",
+                str(source),
+                "--out",
+                str(rejected),
+                "--expected-anchor",
+                str(first / "evidence-anchor.json"),
+            ]
+        )
+        == 1
+    )
+    assert not rejected.exists()
+    rescore_bound_cohort(source, tmp_path / "new-cohort")
+
+
+@pytest.mark.parametrize("contents", ["[]", '{"schema": "unknown"}'])
+def test_invalid_expected_anchor_fails_before_output(tmp_path: Path, contents: str) -> None:
+    source, out = tmp_path / "live", tmp_path / "out"
+    _saved_cohort(source)
+    expected = tmp_path / "anchor.json"
+    expected.write_text(contents)
+    with pytest.raises(ValueError, match="unsupported expected evidence anchor"):
+        rescore_bound_cohort(source, out, expected_anchor=expected)
+    assert not out.exists()
+
+
+def test_checked_in_historical_anchor_retains_bound_results() -> None:
+    root = Path(__file__).resolve().parents[1]
+    anchor = json.loads((root / "benchmark/lifecycle-activation-codex-2026-10-03.anchor.json").read_text())
+    assert anchor["measurement"] == measurement_identity()
+    assert anchor["collection_binding"] == binding_identity()
+    assert anchor["collection_identity"]["host"] == {
+        "id": "codex",
+        "version": "codex-cli 0.160.0",
+        "model": "gpt-6-luna",
+    }
+    assert (
+        anchor["old_verdict_counts"]
+        == anchor["new_verdict_counts"]
+        == {
+            "PASS": 3,
+            "FAIL": 7,
+            "INCONCLUSIVE": 0,
+            "NOT_RUN": 0,
+        }
+    )
+    assert anchor["old_metrics"] == anchor["new_metrics"]
+    expected_files = {
+        f"{case['id']}/{name}"
+        for case in load_pack(version="v2")["cases"]
+        for name in ("codex.jsonl", "observation.json", "preflight.json", "report.json")
+    }
+    assert set(anchor["source_sha256"]) == expected_files
+    assert all(len(bytes.fromhex(checksum)) == 32 for checksum in anchor["source_sha256"].values())
+    changed = [delta for delta in anchor["changes"] if delta["old_reasons"] != delta["new_reasons"]]
+    assert len(changed) == 1 and changed[0]["case_id"] == "stale-superseded-conflict"
+    assert changed[0]["new_reasons"] == ["required_recall_miss"]
+    assert changed[0]["old_repo_paths_read"] == [] and changed[0]["new_repo_paths_read"] == ["NOTES.md"]
+    assert anchor["new_model_calls"] == 0 and anchor["secondary_host"]["status"] == "NOT_RUN"
+    provenance = anchor["source_provenance"]
+    assert provenance["collection_source_commit"] is None
+    assert provenance["source_commit_role"] == "first_preserved_measurement_source_snapshot"
+    assert len(bytes.fromhex(provenance["base_commit"])) == len(bytes.fromhex(provenance["source_commit"])) == 20
+    assert all(value not in json.dumps(anchor) for value in ("/home/", "/tmp/", "source_evidence_root", "final_text"))

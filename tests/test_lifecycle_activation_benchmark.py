@@ -1056,6 +1056,16 @@ def test_fixture_http_server_uses_current_supported_cli(tmp_path: Path) -> None:
 
     git_commit_fixture(checkout)
     bind_fixture_namespace(case, checkout, store_home)
+    from agent_mem_bridge.filesystem_safety import inspect_filesystem, require_local_database
+
+    database = store_home / "fixture-store.sqlite"
+    filesystem = inspect_filesystem(database)
+    if filesystem["classification"] != "local":
+        # Hardened serve intentionally rejects unknown storage (including hosts
+        # without Linux mountinfo). Do not weaken that contract for this fixture.
+        with pytest.raises(ValueError, match="requires a known local filesystem"):
+            require_local_database(database)
+        pytest.skip(f"native fixture HTTP startup requires known-local storage: {filesystem['classification']}")
     process, url, token = module._start_fixture_http(store_home, Path(sys.executable))
     try:
         assert process.poll() is None
@@ -1064,6 +1074,26 @@ def test_fixture_http_server_uses_current_supported_cli(tmp_path: Path) -> None:
     finally:
         module._stop_process(process)
     assert process.poll() is not None
+
+
+@pytest.mark.parametrize("classification", ["unknown", "network"])
+def test_fixture_http_native_startup_requires_local_capability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, classification: str
+) -> None:
+    import importlib
+
+    import agent_mem_bridge.filesystem_safety as safety
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    runner = importlib.import_module("run_lifecycle_activation_benchmark")
+    monkeypatch.setattr(
+        safety, "inspect_filesystem", lambda path: {"classification": classification, "filesystem_type": None}
+    )
+    monkeypatch.setattr(
+        runner, "_start_fixture_http", lambda *args: pytest.fail("unsupported native startup attempted")
+    )
+    with pytest.raises(pytest.skip.Exception, match=f"known-local storage: {classification}"):
+        test_fixture_http_server_uses_current_supported_cli(tmp_path)
 
 
 @pytest.mark.parametrize("case_id", ["cross-client-handoff", "amb-unavailable"])

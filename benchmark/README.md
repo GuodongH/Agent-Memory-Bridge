@@ -34,6 +34,11 @@ and secondary-host rerun commands, see
 The opt-in [Codex read-measurement revision](lifecycle-activation-codex-repo-read-v1.md)
 adds source-bound `rg` read evidence and full-cohort re-scoring while preserving
 the original v2 result and unchanged decision grader.
+The [Codex cohort binding](lifecycle-activation-codex-cohort-v1.md) verifies the
+complete collection identity; the [sanitized historical anchor](lifecycle-activation-codex-2026-10-03.anchor.json)
+preserves all 40 private input hashes, paired results and metrics. Use
+`rescore-codex --expected-anchor` to pin that collection rather than accept any
+internally consistent cohort.
 
 ## Planning Manifests
 
