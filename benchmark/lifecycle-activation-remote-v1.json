@@ -1,0 +1,26 @@
+{
+  "schema": "amb.lifecycle-activation-remote-condition.v1",
+  "issue": 58,
+  "condition": "remote_authority",
+  "parent_packs": ["v1", "v2"],
+  "namespace": "project:remote-lifecycle-fixture",
+  "material_prompt": "The run ledger schema choice may be constrained by a prior project decision. What constraint must we preserve?",
+  "negative_prompt": "Fix the typo",
+  "remote_memory": "Prior project decision: preserve the run ledger schema with REMOTE-AUTHORITY-CONSTRAINT.",
+  "local_trap": "Prior project decision: replace the run ledger schema with CONFLICTING-LOCAL-TRAP.",
+  "cases": [
+    {"id": "hit", "state": "hit", "remote_recalls": 1, "http_clients": 1},
+    {"id": "skip", "state": "skipped", "remote_recalls": 0, "http_clients": 0},
+    {"id": "no_hit", "state": "no_hit", "remote_recalls": 1, "http_clients": 1},
+    {"id": "unavailable", "state": "error", "remote_recalls": 0, "http_clients": 1},
+    {"id": "local_trap", "state": "hit", "remote_recalls": 1, "http_clients": 1},
+    {"id": "repeat", "state": "skipped", "remote_recalls": 1, "http_clients": 1}
+  ],
+  "native_gate": {
+    "required_terminal_event": "turn.completed",
+    "required_exit_code": 0,
+    "nonempty_final_text": true,
+    "observed_native_callback": true,
+    "fixture_filesystem_isolation": true
+  }
+}

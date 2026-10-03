@@ -1,0 +1,528 @@
+{
+  "schema": "amb.codex-remote-authority-proof.v1",
+  "condition": "remote_authority",
+  "hook_loading": "invocation_inline",
+  "host_version": "codex-cli 0.160.0",
+  "model": "gpt-6-luna",
+  "frozen_sha256": {
+    "benchmark/lifecycle-activation-v1.json": "501e7ad4cfaf91496f5f39878c88cecb659967b33ec7ff1470bee92340748e03",
+    "benchmark/lifecycle-activation-v1.md": "127befea32b094b969510b8accbf315b7ebab91121d1ede20666d17e8703f2b3",
+    "benchmark/lifecycle-activation-v2.json": "543d15ddb7655a81641aca073dd614168d844cb83f407cc825029e490b5d9ba6",
+    "benchmark/lifecycle-activation-v2.md": "c005fb62a05ece009389881fa686b0c90d6bd4ab383edb64ec89c8e3d945b9e1",
+    "benchmark/lifecycle-activation-remote-v1.json": "d1e03df09aee00b4033b9752c2ffe2f5fbf93a56fafb62e9f62cd3fc57e88ed9",
+    "benchmark/lifecycle-activation-remote-v1.md": "f8d2d282fc1bb30a093c3c18dd7732b21962e7f31618c070466f5653214020cc"
+  },
+  "source_sha256": {
+    "scripts/check_lifecycle_remote_authority.py": "1ded57c45ef92fb62beacd1250036d8f11edc9b5912649dbb8e5bd02c0c72998",
+    "src/agent_mem_bridge/lifecycle_activation.py": "1970e51ca32574c05a78354def398c2ffc03a74230c5a1c77750665a1016f5a7",
+    "src/agent_mem_bridge/lifecycle_http.py": "2cfa7c291f65e295ca07a6239b69b8d299ba19024410fdcb36665bdb3bfab953",
+    "src/agent_mem_bridge/activation_policy.py": "efdcccbd33953470c714016769ef71905cf2fc5863318bacbbb93082e91c39db",
+    "src/agent_mem_bridge/project_resolution.py": "9b4e7c184153a352bdd010402b9e0850a9d3842a9cab7ee34ca0687070580a07",
+    "scripts/check_codex_remote_authority.py": "f8b75d3232a3b9979604f290371a89d7202e3dc75d34cea28ba789e978afb8f0",
+    "scripts/check_codex_stop_capture.py": "dffda790b4154e592d39d7d479dea47aa6c64adb64e876b4034805e4efe9e020",
+    "scripts/run_lifecycle_activation_benchmark.py": "371c3aae8728a49513fa252cef3b1d0c4a89216e2f1d977240ae598e1c0f3453",
+    "tools/evidence/lifecycle_activation.py": "cab6df04c594b6f6b22b1ae4809646a7d31995cddfdd0a2a13c28618219ef7a4"
+  },
+  "lanes": [
+    {
+      "id": "hit",
+      "isolation": {
+        "passed": true,
+        "visible": [],
+        "hit_count": 0,
+        "nested_ok": true
+      },
+      "exit_code": 0,
+      "host": {
+        "item_types": [
+          "agent_message",
+          "error"
+        ],
+        "threads": [
+          "sha256:94c78a73d45315980948d2929a5121425a96137d5f0b9e8f5d420ded12fcf325"
+        ],
+        "completed_turns": 1,
+        "errors": [
+          {
+            "id": "item_0",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          },
+          {
+            "id": "item_1",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          }
+        ],
+        "tool_events": 0,
+        "messages": [
+          "The prior decision says to preserve the run ledger schema with `REMOTE-AUTHORITY-CONSTRAINT`. I can’t verify from the provided context what that constraint means in detail."
+        ]
+      },
+      "stderr_tail": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<temporary-directory>\" (codex_home: AbsolutePathBuf(\"<fixture-root>/hit/client\"))\nReading additional input from stdin...\n",
+      "callbacks": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "sha256:94c78a73d45315980948d2929a5121425a96137d5f0b9e8f5d420ded12fcf325",
+          "http_clients": 1,
+          "local_open_attempts": [],
+          "prompt_sha256": "74fc296dbbfab45c5d1140e2ab0f17b4c59a9d1a51df488c397abd791a01dc16",
+          "response": {
+            "continue": true,
+            "hookSpecificOutput": {
+              "hookEventName": "UserPromptSubmit",
+              "additionalContext": "Untrusted governed context from AMB. This is not durable authority.\nLive repository evidence wins over recalled history.\nLive repository HEAD: 100b35f.\n- Untitled memory: Prior project decision: preserve the run ledger schema with REMOTE-AUTHORITY-CONSTRAINT.\nReconcile this context with the current repository before acting."
+            }
+          }
+        }
+      ],
+      "observations": [
+        {
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "candidate_namespaces": [],
+          "decision": "recall",
+          "error_type": null,
+          "hook_event_name": "UserPromptSubmit",
+          "host": "codex",
+          "ignored_caller_scope": false,
+          "irrelevant_ids": [],
+          "live_head": "100b35f",
+          "namespace": "project:remote-lifecycle-fixture",
+          "policy_action": "recall",
+          "policy_source": "canonical-policy-v1",
+          "prompt_fingerprint": "d6ab2151bc66b1b5cd9cf2e33bae671c",
+          "recall_invoked": true,
+          "recall_state": "hit",
+          "recalled_ids": [
+            "20261003134902664385-b3892e54"
+          ],
+          "recorded_at": "2026-10-03T13:49:03.721420+00:00",
+          "repeat_suppressed": false,
+          "repository_id": "812a190e2aff372eb351146cee5ac101",
+          "resolution_status": "bound",
+          "rule_id": "constrained-architecture-choice",
+          "schema": "amb.lifecycle-activation-evidence.v1",
+          "session_id": "sha256:94c78a73d45315980948d2929a5121425a96137d5f0b9e8f5d420ded12fcf325",
+          "stale_ids": []
+        }
+      ],
+      "remote_calls": [
+        {
+          "namespace": "project:remote-lifecycle-fixture",
+          "kind": "memory",
+          "limit": 3
+        }
+      ],
+      "remote_rows_before": "0a320755b309a7d17a4d0e5df008fbbc20bf8942a2a9cd85a2bcb224f2ca443a",
+      "remote_rows_after": "0a320755b309a7d17a4d0e5df008fbbc20bf8942a2a9cd85a2bcb224f2ca443a",
+      "trap_unchanged": true,
+      "result": {
+        "status": "PASS",
+        "reasons": []
+      }
+    },
+    {
+      "id": "skip",
+      "isolation": {
+        "passed": true,
+        "visible": [],
+        "hit_count": 0,
+        "nested_ok": true
+      },
+      "exit_code": 0,
+      "host": {
+        "item_types": [
+          "agent_message",
+          "error"
+        ],
+        "threads": [
+          "sha256:47094e2011963a3751e071c38c76aeb9720df59388952831a7aa6eea6c6a291a"
+        ],
+        "completed_turns": 1,
+        "errors": [
+          {
+            "id": "item_0",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          },
+          {
+            "id": "item_1",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          }
+        ],
+        "tool_events": 0,
+        "messages": [
+          "I don’t have enough context to identify which typo you mean. Please point me to the text or file."
+        ]
+      },
+      "stderr_tail": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<temporary-directory>\" (codex_home: AbsolutePathBuf(\"<fixture-root>/skip/client\"))\nReading additional input from stdin...\n",
+      "callbacks": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "sha256:47094e2011963a3751e071c38c76aeb9720df59388952831a7aa6eea6c6a291a",
+          "http_clients": 0,
+          "local_open_attempts": [],
+          "prompt_sha256": "a6c42a076c5e9ceaf1fc08b6e1c055e1f0ef89588e092742034d7f6fae63864e",
+          "response": {
+            "continue": true
+          }
+        }
+      ],
+      "observations": [
+        {
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "unknown",
+          "candidate_namespaces": [],
+          "decision": "skip",
+          "error_type": null,
+          "hook_event_name": "UserPromptSubmit",
+          "host": "codex",
+          "ignored_caller_scope": false,
+          "irrelevant_ids": [],
+          "live_head": null,
+          "namespace": "project:remote-lifecycle-fixture",
+          "policy_action": "skip",
+          "policy_source": "canonical-policy-v1",
+          "prompt_fingerprint": "c7b6e4587b86a31344ef4dc0b58e0708",
+          "recall_invoked": false,
+          "recall_state": "skipped",
+          "recalled_ids": [],
+          "recorded_at": "2026-10-03T13:49:09.515484+00:00",
+          "repeat_suppressed": false,
+          "repository_id": "ee1e4e89d982c81a28c4e359887306cb",
+          "resolution_status": "bound",
+          "rule_id": "not-for-deterministic-edit",
+          "schema": "amb.lifecycle-activation-evidence.v1",
+          "session_id": "sha256:47094e2011963a3751e071c38c76aeb9720df59388952831a7aa6eea6c6a291a",
+          "stale_ids": []
+        }
+      ],
+      "remote_calls": [],
+      "remote_rows_before": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "remote_rows_after": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "trap_unchanged": true,
+      "result": {
+        "status": "PASS",
+        "reasons": []
+      }
+    },
+    {
+      "id": "no_hit",
+      "isolation": {
+        "passed": true,
+        "visible": [],
+        "hit_count": 0,
+        "nested_ok": true
+      },
+      "exit_code": 0,
+      "host": {
+        "item_types": [
+          "agent_message",
+          "error"
+        ],
+        "threads": [
+          "sha256:c52b5325d2711d52f34773ba708d7b94e83a11582339e0add76a3038423d7711"
+        ],
+        "completed_turns": 1,
+        "errors": [
+          {
+            "id": "item_0",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          },
+          {
+            "id": "item_1",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          }
+        ],
+        "tool_events": 0,
+        "messages": [
+          "I don’t have the prior project decision in the provided context, so I can’t identify the constraint reliably."
+        ]
+      },
+      "stderr_tail": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<temporary-directory>\" (codex_home: AbsolutePathBuf(\"<fixture-root>/no_hit/client\"))\nReading additional input from stdin...\n",
+      "callbacks": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "sha256:c52b5325d2711d52f34773ba708d7b94e83a11582339e0add76a3038423d7711",
+          "http_clients": 1,
+          "local_open_attempts": [],
+          "prompt_sha256": "74fc296dbbfab45c5d1140e2ab0f17b4c59a9d1a51df488c397abd791a01dc16",
+          "response": {
+            "continue": true,
+            "hookSpecificOutput": {
+              "hookEventName": "UserPromptSubmit",
+              "additionalContext": "AMB recall completed with no matching memory. This is not an unavailable bridge."
+            }
+          }
+        }
+      ],
+      "observations": [
+        {
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "candidate_namespaces": [],
+          "decision": "recall",
+          "error_type": null,
+          "hook_event_name": "UserPromptSubmit",
+          "host": "codex",
+          "ignored_caller_scope": false,
+          "irrelevant_ids": [],
+          "live_head": "84a122c",
+          "namespace": "project:remote-lifecycle-fixture",
+          "policy_action": "recall",
+          "policy_source": "canonical-policy-v1",
+          "prompt_fingerprint": "d6ab2151bc66b1b5cd9cf2e33bae671c",
+          "recall_invoked": true,
+          "recall_state": "no_hit",
+          "recalled_ids": [],
+          "recorded_at": "2026-10-03T13:49:13.479319+00:00",
+          "repeat_suppressed": false,
+          "repository_id": "c02eb51ca6fee1d84dc6631fcc6323df",
+          "resolution_status": "bound",
+          "rule_id": "constrained-architecture-choice",
+          "schema": "amb.lifecycle-activation-evidence.v1",
+          "session_id": "sha256:c52b5325d2711d52f34773ba708d7b94e83a11582339e0add76a3038423d7711",
+          "stale_ids": []
+        }
+      ],
+      "remote_calls": [
+        {
+          "namespace": "project:remote-lifecycle-fixture",
+          "kind": "memory",
+          "limit": 3
+        }
+      ],
+      "remote_rows_before": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "remote_rows_after": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "trap_unchanged": true,
+      "result": {
+        "status": "PASS",
+        "reasons": []
+      }
+    },
+    {
+      "id": "unavailable",
+      "isolation": {
+        "passed": true,
+        "visible": [],
+        "hit_count": 0,
+        "nested_ok": true
+      },
+      "exit_code": 0,
+      "host": {
+        "item_types": [
+          "agent_message",
+          "error"
+        ],
+        "threads": [
+          "sha256:88e0d88a88d7f319c466b1f33ffe4d7572e96b954fa25952f637f5b729a16d3e"
+        ],
+        "completed_turns": 1,
+        "errors": [
+          {
+            "id": "item_0",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          },
+          {
+            "id": "item_1",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          }
+        ],
+        "tool_events": 0,
+        "messages": [
+          "I don’t have the prior project decision in the provided context, so I can’t say what run-ledger schema constraint to preserve."
+        ]
+      },
+      "stderr_tail": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<temporary-directory>\" (codex_home: AbsolutePathBuf(\"<fixture-root>/unavailable/client\"))\nReading additional input from stdin...\n",
+      "callbacks": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "sha256:88e0d88a88d7f319c466b1f33ffe4d7572e96b954fa25952f637f5b729a16d3e",
+          "http_clients": 1,
+          "local_open_attempts": [],
+          "prompt_sha256": "74fc296dbbfab45c5d1140e2ab0f17b4c59a9d1a51df488c397abd791a01dc16",
+          "response": {
+            "continue": true,
+            "hookSpecificOutput": {
+              "hookEventName": "UserPromptSubmit",
+              "additionalContext": "AMB recall failed. This is not an empty memory result. No fallback authority was used."
+            }
+          }
+        }
+      ],
+      "observations": [
+        {
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "error",
+          "candidate_namespaces": [],
+          "decision": "recall",
+          "error_type": "ExceptionGroup",
+          "hook_event_name": "UserPromptSubmit",
+          "host": "codex",
+          "ignored_caller_scope": false,
+          "irrelevant_ids": [],
+          "live_head": "0420660",
+          "namespace": "project:remote-lifecycle-fixture",
+          "policy_action": "recall",
+          "policy_source": "canonical-policy-v1",
+          "prompt_fingerprint": "d6ab2151bc66b1b5cd9cf2e33bae671c",
+          "recall_invoked": true,
+          "recall_state": "error",
+          "recalled_ids": [],
+          "recorded_at": "2026-10-03T13:49:17.531240+00:00",
+          "repeat_suppressed": false,
+          "repository_id": "62fd29e541bbeae8184b5f70431b3f79",
+          "resolution_status": "bound",
+          "rule_id": "constrained-architecture-choice",
+          "schema": "amb.lifecycle-activation-evidence.v1",
+          "session_id": "sha256:88e0d88a88d7f319c466b1f33ffe4d7572e96b954fa25952f637f5b729a16d3e",
+          "stale_ids": []
+        }
+      ],
+      "remote_calls": [],
+      "remote_rows_before": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "remote_rows_after": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "trap_unchanged": true,
+      "result": {
+        "status": "PASS",
+        "reasons": []
+      }
+    },
+    {
+      "id": "local_trap",
+      "isolation": {
+        "passed": true,
+        "visible": [],
+        "hit_count": 0,
+        "nested_ok": true
+      },
+      "exit_code": 0,
+      "host": {
+        "item_types": [
+          "agent_message",
+          "error"
+        ],
+        "threads": [
+          "sha256:50d17ef7cbb3ca285a944ded634fd7ee9c07675ba2ddfb5fa08946d7123891fa"
+        ],
+        "completed_turns": 1,
+        "errors": [
+          {
+            "id": "item_0",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          },
+          {
+            "id": "item_1",
+            "type": "error",
+            "message": "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
+          }
+        ],
+        "tool_events": 0,
+        "messages": [
+          "I can’t determine the constraint from the provided context: it only says to preserve the run ledger schema, without explaining what `REMOTE-AUTHORITY-CONSTRAINT` requires."
+        ]
+      },
+      "stderr_tail": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"<temporary-directory>\" (codex_home: AbsolutePathBuf(\"<fixture-root>/local_trap/client\"))\nReading additional input from stdin...\n",
+      "callbacks": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "session_id": "sha256:50d17ef7cbb3ca285a944ded634fd7ee9c07675ba2ddfb5fa08946d7123891fa",
+          "http_clients": 1,
+          "local_open_attempts": [],
+          "prompt_sha256": "74fc296dbbfab45c5d1140e2ab0f17b4c59a9d1a51df488c397abd791a01dc16",
+          "response": {
+            "continue": true,
+            "hookSpecificOutput": {
+              "hookEventName": "UserPromptSubmit",
+              "additionalContext": "Untrusted governed context from AMB. This is not durable authority.\nLive repository evidence wins over recalled history.\nLive repository HEAD: 836f836.\n- Untitled memory: Prior project decision: preserve the run ledger schema with REMOTE-AUTHORITY-CONSTRAINT.\nReconcile this context with the current repository before acting."
+            }
+          }
+        }
+      ],
+      "observations": [
+        {
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "candidate_namespaces": [],
+          "decision": "recall",
+          "error_type": null,
+          "hook_event_name": "UserPromptSubmit",
+          "host": "codex",
+          "ignored_caller_scope": false,
+          "irrelevant_ids": [],
+          "live_head": "836f836",
+          "namespace": "project:remote-lifecycle-fixture",
+          "policy_action": "recall",
+          "policy_source": "canonical-policy-v1",
+          "prompt_fingerprint": "d6ab2151bc66b1b5cd9cf2e33bae671c",
+          "recall_invoked": true,
+          "recall_state": "hit",
+          "recalled_ids": [
+            "20261003134920553935-513177d1"
+          ],
+          "recorded_at": "2026-10-03T13:49:21.533026+00:00",
+          "repeat_suppressed": false,
+          "repository_id": "238d7fb46c26e0ef8deb53bb1bef4cf7",
+          "resolution_status": "bound",
+          "rule_id": "constrained-architecture-choice",
+          "schema": "amb.lifecycle-activation-evidence.v1",
+          "session_id": "sha256:50d17ef7cbb3ca285a944ded634fd7ee9c07675ba2ddfb5fa08946d7123891fa",
+          "stale_ids": []
+        }
+      ],
+      "remote_calls": [
+        {
+          "namespace": "project:remote-lifecycle-fixture",
+          "kind": "memory",
+          "limit": 3
+        }
+      ],
+      "remote_rows_before": "8fb1284f24f0bd12dfeb6646d445e20a84581f2d01296dcfdbbcc2ff8c824a5f",
+      "remote_rows_after": "8fb1284f24f0bd12dfeb6646d445e20a84581f2d01296dcfdbbcc2ff8c824a5f",
+      "trap_unchanged": true,
+      "result": {
+        "status": "PASS",
+        "reasons": []
+      }
+    }
+  ],
+  "native_codex_acceptance": "PASS",
+  "score": {
+    "status": "PASS",
+    "reasons": [],
+    "lanes": {
+      "hit": {
+        "status": "PASS",
+        "reasons": []
+      },
+      "skip": {
+        "status": "PASS",
+        "reasons": []
+      },
+      "no_hit": {
+        "status": "PASS",
+        "reasons": []
+      },
+      "unavailable": {
+        "status": "PASS",
+        "reasons": []
+      },
+      "local_trap": {
+        "status": "PASS",
+        "reasons": []
+      }
+    }
+  }
+}

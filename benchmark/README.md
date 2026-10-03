@@ -370,6 +370,13 @@ does not emit child-session tool events. `instrument_pass` means the measurement
 setup is complete for the traces that were actually scored. It does not mean
 the host activated AMB correctly.
 
+The [remote-authority condition](lifecycle-activation-remote-v1.md) adds isolated
+HTTP transport and no-local-fallback checks for issue #58. Its direct hook
+contract and native Codex acceptance are separate results; it does not rewrite
+the frozen v1/v2 packs or establish a native host pass by itself.
+The [native Codex evidence bundle](../docs/evidence/issue-58-codex-remote/README.md)
+contains the five-case source-bound report and post-merge re-scoring commands.
+
 ## Activation Stress
 
 The activation stress pack is intentionally conservative. It reuses reviewed belief
