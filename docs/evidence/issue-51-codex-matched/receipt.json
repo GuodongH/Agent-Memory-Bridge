@@ -1,0 +1,515 @@
+{
+  "schema": "amb.issue51.matched-native-receipt.v1",
+  "source_commit": "483c755e7299b96990b0a75f4363027c21138c47",
+  "base_main": "1cd6adfb56e2035413513b5a62e48225cee1ac98",
+  "source_sha256": {
+    "scripts/run_lifecycle_activation_benchmark.py": "075ebc4fbab8781df012bd4cd31e2a7730f83e351bba6b6eaf9f9ac06df167a5",
+    "scripts/run_codex_lifecycle_activation_benchmark.py": "64fc5688f1054dcad1cbea01d5af9ba1b530eade0b028b1faa5fbc23537db534",
+    "tools/evidence/lifecycle_activation.py": "1fc618ccc523e6ed34dfb5a3ab19da98b5b9e953fb25a4903650d7e8c8c28e21",
+    "src/agent_mem_bridge/__init__.py": "954314d2212b70b4c8bb24b24e3aad6ab1dd29228bc3444cc7eb59dc57ce8038",
+    "src/agent_mem_bridge/__main__.py": "307299fda7b77d22c64cb51430ec75e5f59d78e9c948786afb3b2544fe45e4b7",
+    "src/agent_mem_bridge/activation_policy.py": "8bea614ab779d4601c217886fe00b65db5d3e31de1b05e3fbb49a64a6d1173c6",
+    "src/agent_mem_bridge/archive_snapshot.py": "102214fc3902309799e6735e16bf4ed238f2996a84a1d3ed5a6c145948e12b2d",
+    "src/agent_mem_bridge/classifier.py": "be84303b8d4ed1d5782191062e9f7a89606729459fcbca7a8b2288a1d689c7ff",
+    "src/agent_mem_bridge/cli.py": "0ab3984049d105e132b15d79d8f98c8fa9ec672b368cfc01a1ece70774c7a420",
+    "src/agent_mem_bridge/client_config.py": "7f7d0d1b2373af18471eebf6e35c1a726a414028b556cfbabd1aced3ff81217a",
+    "src/agent_mem_bridge/codex_rollout.py": "268f252159a8aedbace7f2d60ff68eae78d3c6822d097c8e46020562f886a6f5",
+    "src/agent_mem_bridge/command_provider.py": "1d63ad9c4e8984753841f80068fe11c811424a57264aa9d3cced1efe697f063f",
+    "src/agent_mem_bridge/consolidation.py": "a45c25b4a3f783998250d4dca4654c83cbab12f72ea17c1fceb4d1b8fb698844",
+    "src/agent_mem_bridge/context_evaluation.py": "1d53d21cfe70cde24fbc2ea0a188e843c95bf6747e9113c143c04c01aecba9e1",
+    "src/agent_mem_bridge/context_manifest.py": "00105db9d9533d8f8a737d0fc3ada8602eecac05a0cc9b325b471b8730534821",
+    "src/agent_mem_bridge/contradiction.py": "3f3d22e7ecc06db78f71cfa0f062db52aa0211d6751ef4b41bbe63c94622b86a",
+    "src/agent_mem_bridge/cross_client_activation.py": "424c8dc44f12fdee866ff22f0d8638849e0c6fa8a7b78e6cb0cda3526a2fd9b7",
+    "src/agent_mem_bridge/current_release_contract.py": "2a2cadd78789f1fbe9194ef969d82df026fe2855209c2e79fc78dcd3a901686a",
+    "src/agent_mem_bridge/database_maintenance.py": "e6b78a46157583155c72cc5329a01789548c911ff9bce74fee120baa50ac6ad5",
+    "src/agent_mem_bridge/deployment_config.py": "d8a1ffd30341fa85769a51fea1b03ae8d7c01e97f78655df4605a20e189f513d",
+    "src/agent_mem_bridge/durable_data_policy.py": "fcfa5bf6d79c14c1f527cd75ffa5a0823241eeb79ee59fbde6a8b6d12efc4906",
+    "src/agent_mem_bridge/dynamic_state.py": "3f03d58f744bd7493517e767305417c16232b17f18653aeb06fda2730a3694ef",
+    "src/agent_mem_bridge/embedding_index.py": "fe09d9ea8156d00864080bc01c4fe5ad0a6c59b289bce7dd5660db62907c7b5e",
+    "src/agent_mem_bridge/embedding_scheduler.py": "619599df58878f9b3774b2e3466a168091b122cb859822f44a4d0515aff91597",
+    "src/agent_mem_bridge/enrichment_rules.py": "8bed8da1cd7e0bab26b3e92ceeb656008ff22140887f18dd37d294b6c0fb574b",
+    "src/agent_mem_bridge/evidence_inspect.py": "c29e22cdd5ec326643597819d5a8ec177acd27fb10939273abc751f4f5b216ec",
+    "src/agent_mem_bridge/exporters.py": "a48925f0f4dda156760cc0b27156ad680e808a09d7fc9a6865e7de75992375cc",
+    "src/agent_mem_bridge/failure_report.py": "474f0bd42a0e609fa440b24be9eeb563e3ebaab2289bc382916eb4ac9cd940a2",
+    "src/agent_mem_bridge/filesystem_safety.py": "ec5bc2d4f9552b9a2ce28747a2b90565182fddd357f8f375ce0f33d70ca12f98",
+    "src/agent_mem_bridge/first_run.py": "89e7da16fc58319f070181c164897fb81af589c73c271e78413b86931b0d043e",
+    "src/agent_mem_bridge/governance_trigger.py": "690cc1610a4331810df6a4bb7bd8ceac373ae0eb3fdf954a87f72173d956d294",
+    "src/agent_mem_bridge/healthcheck.py": "a78c75ece58a93069cf5aa2a9ffe881f73c56d95979fce6512b994b5c1c16989",
+    "src/agent_mem_bridge/http_probe.py": "b70106d9ec0bd730ef2140336582f14eef612534801a998a93de0cd3353cb0e4",
+    "src/agent_mem_bridge/http_transport.py": "4af3440a9a0c25c8c9c83f50dff7e346a3c8f1fc25d7e5a43bd606f91c55ee5b",
+    "src/agent_mem_bridge/index_health.py": "4daeb7d5b11fa60da33ff2062442d0f5741fb84b30d02c0ae2cecb2ca74d95c1",
+    "src/agent_mem_bridge/knowledge_explorer.py": "c5006ec8970fb791ea49dd7e5998a7783003630c0b102a733a25da536e6ea131",
+    "src/agent_mem_bridge/learning_candidates.py": "46ac8f927fa96c8350a4f6ef31ad1e56fcd171bfdeb8004be3bcfa1bcb23cb2b",
+    "src/agent_mem_bridge/learning_policy.py": "9c900e1bc2c43bd6eb5b3f2b5cee4330573380e7bdc4f2baf1221ac82383396a",
+    "src/agent_mem_bridge/lifecycle_activation.py": "d0c60abde45277053de8bdcee7ee7d5c10eb13f48043200d4010c5eed5ce90eb",
+    "src/agent_mem_bridge/lifecycle_http.py": "2cfa7c291f65e295ca07a6239b69b8d299ba19024410fdcb36665bdb3bfab953",
+    "src/agent_mem_bridge/lineage.py": "3e70e0c388553c54cfcf3ac16bce5fa33da5c4557c3964c90a6020d4484aa950",
+    "src/agent_mem_bridge/log_maintenance.py": "8a0e96698fae275ae98a1d152c885c9b6bafbc01973afc8928e6383106542f8f",
+    "src/agent_mem_bridge/mcp_boundary.py": "d03fc4b8fe0f25900e44545165f51ba6b2f35ed4168b83c2b876752bbe24e7b8",
+    "src/agent_mem_bridge/onboarding.py": "948381b1e5e2cc86b962196053f9d0accdf35cd98fcd96a683166bd3dca75879",
+    "src/agent_mem_bridge/onboarding_contract.py": "745dc55aafab0459a77eae6457d6539a0d80a537a80cde7deab89d4a176dde84",
+    "src/agent_mem_bridge/paths.py": "df7039276c1d59d5133b35db30b57ec1fbaae1e9461c785bc7ab2371a995c1b5",
+    "src/agent_mem_bridge/poll_cursor.py": "bb98175fe1b090580876c1ef288e42c3c31381d5de72971fcc2386407995e1bb",
+    "src/agent_mem_bridge/procedure_governance.py": "95122dff5280362382cc944a9d19c8669cdc19b15a283b3251d8d98d12b1ee25",
+    "src/agent_mem_bridge/profile_assembly.py": "f691bfe1790926c71876d20f0fcc49c5264bb1b05a3b1d9a043cb017591304a6",
+    "src/agent_mem_bridge/profile_bundle.py": "49c74a788fbbf1da9de695fccab6680e729a0eeadea867d18fc3db825308c1ff",
+    "src/agent_mem_bridge/profile_migration.py": "d4f90239f8faae1244e2d3881ba300624f0d854cccf1c9ceb0e7b6181bfc6c94",
+    "src/agent_mem_bridge/project_init.py": "4bcfaaffdea6d6d8b36f887bbdffb9a1e02ab7aa2512877fb24a7c103f1bb394",
+    "src/agent_mem_bridge/project_resolution.py": "9b4e7c184153a352bdd010402b9e0850a9d3842a9cab7ee34ca0687070580a07",
+    "src/agent_mem_bridge/promotion.py": "814084fb3517e0a966fec68aad94289b0348ddc525ba3783a81c70375b0123d5",
+    "src/agent_mem_bridge/promotion_governance.py": "88d3024d2fcbe050a5fdd3b622c0cb2e61d31b24bbdc38d4a9ed70717612c88d",
+    "src/agent_mem_bridge/proof.py": "92922f087a1091be1cd4de849029a773caab3ebdbaf2000bef4e22ef8fffa3a3",
+    "src/agent_mem_bridge/provenance.py": "ca275300ca20b9b433d55eeb5ffaa3cecbb6d15d51315c900d52ecbc319cc5b1",
+    "src/agent_mem_bridge/public_surface.py": "d18343ae6a4aee9617c16b683fc57dd46109ce84b0a52d2e11b8cb295c6f096c",
+    "src/agent_mem_bridge/query.py": "7da08a25ed4e27b519ebb85a718fc748af732d436814117ada8648181dc1fca3",
+    "src/agent_mem_bridge/recall_eligibility.py": "1126450623594d6cf5413d99b4792d9259c96352820f0ca9d10154bf2402da54",
+    "src/agent_mem_bridge/recall_first.py": "577f10dd6bd42c699e2a546070667059d1134f2e159e0cef9ffc539e7dc87fe2",
+    "src/agent_mem_bridge/record_projection.py": "1b4eefaf4bad85ac46e4079b91e7f65d0b6b638ce9fd63595b7b8beb9e2f3ac1",
+    "src/agent_mem_bridge/reflex.py": "aade6397d7c37f6368f9e1649e616798bb723fcf4e08444ca1ad012b6ae38c53",
+    "src/agent_mem_bridge/relation_metadata.py": "fc4e0904218ca39346c0e2e31f58a20681319b5e2470601dcea0c9756cea2eab",
+    "src/agent_mem_bridge/release_contract.py": "6716bf796c77d4f580f7f9909f0282ec7d0fbd427c7d3e42d919ddcd51e3b81a",
+    "src/agent_mem_bridge/repository.py": "968c01142e60dc70d216adb5d93c488c376a0d77909ed040b69b81a3b22e63e1",
+    "src/agent_mem_bridge/repository_bootstrap.py": "d06e71245f8b238d9426d4d34cebe913c91b4dd455b363e286401d8309cd32a5",
+    "src/agent_mem_bridge/repository_snapshot_store.py": "bfdb9ad784d448b93c6ca3ec7316252405537615bd9911e1d783fd8f66e5cc82",
+    "src/agent_mem_bridge/retrieval_feedback.py": "880514bf47747a32c2d80a15b5d95ca6987138b0ce54d10398ee9a64551147ab",
+    "src/agent_mem_bridge/review_queue.py": "0e7ab86c57cd9d9b93c823fd0a34560cfcdc410e9afd5d5af63ff4fbbdfcaf9c",
+    "src/agent_mem_bridge/review_workflow.py": "6b30fb0e60e4de71467a811f8c1495aee575239bbb8330527680d22367f9d8e5",
+    "src/agent_mem_bridge/revisions.py": "0aa96b59787d096dd4b93629f9af3c220155a95f24616f966eb92f46fc3d098e",
+    "src/agent_mem_bridge/run_consolidation.py": "a62f35d1dbf2ccc41725ef1b8020775f207b02189a6daac83eaf4f292dc44d64",
+    "src/agent_mem_bridge/run_ledger.py": "f34b4e1820965adc84281a4f773e5e0d892d36659c0896c9cca59ebe1a523778",
+    "src/agent_mem_bridge/run_outcome_authority.py": "c657a3eb46c8639c5a26d309d8ba5a6287a73e98986ed5d4a4d2a1dc7559f05f",
+    "src/agent_mem_bridge/run_projection.py": "d75cb2aed46a5d90159ae53f19031d9482a7a2b56f666336dfbbe0a94e261cf9",
+    "src/agent_mem_bridge/run_verification_receipts.py": "1dcde16ea111cb1cfdfb95aa22ac899f03fbcc5055e6631561ffdbd1bad0c3ea",
+    "src/agent_mem_bridge/schema.py": "cadc3998f285fa7937f40f70b85bfce9ad96ce9336d4b126076adf76c3f5aef3",
+    "src/agent_mem_bridge/server.py": "054bb6375df17c346fc5c64fc63826176318929c0fe6f50c260d47d1310cde7d",
+    "src/agent_mem_bridge/service.py": "19b1fefd96b0bad59073c66caceaef9418f544c3a603588dfffedb789844a9a0",
+    "src/agent_mem_bridge/service_health.py": "d6843534dddbc8309a0754f2c0dcf84a33112e0cef04e1742cc561cd0d8c9b61",
+    "src/agent_mem_bridge/service_lock.py": "f13203f308e6549bc76ae5bdd0c30523de3608ec58f1382401369773b319fe00",
+    "src/agent_mem_bridge/session_closeout.py": "b6cc451bd2ba2c92364919fbb16d5132c3871d7efc1efa802c327427a582cfc8",
+    "src/agent_mem_bridge/setup_apply.py": "02de5a4cef0b1a76a11c5709ef475df4037c50a8ee6667d0e22ccadfca281a49",
+    "src/agent_mem_bridge/setup_planner.py": "5d1852c196ad9c8d5373f4211c32783e6b76173cdc841398adeb3b8816c51801",
+    "src/agent_mem_bridge/signals.py": "e113349c32b5417510b4262e5219c3c128c01f7e8e9369a8b692023b335ffd39",
+    "src/agent_mem_bridge/source_sync.py": "341575ced196a5565184894b551c512cda2dbf5686264d19769428255674cc86",
+    "src/agent_mem_bridge/state_io.py": "6bd8be6d154b05e26b3b28e3301c2cb6e49645509040cb66b56887b521d476f0",
+    "src/agent_mem_bridge/stdio_probe.py": "64a2a54a93d68c7a6bebf96db1980a1dc85094d7b266b869409c7f206850435c",
+    "src/agent_mem_bridge/storage.py": "af2663479a01ee7c1c1edded0c3386b6f2a359c0b9ec608776dd72b9e24f93e0",
+    "src/agent_mem_bridge/structured_record.py": "40264c27c179efd296f94ab8dc0473de7190541e1efbb34736ccdec7b3c80e1b",
+    "src/agent_mem_bridge/sync_notes.py": "7882f1a75cb9ca4e2fe881ea7762c2a1557144f0797c839137555fd2193ef9fa",
+    "src/agent_mem_bridge/task_brief.py": "ef2041d9dc8213cd432bb2dcc9b3168aac7c0690e71fab78e8a78b3b36d583e0",
+    "src/agent_mem_bridge/task_memory.py": "b20b211dc66b5516f41b5dc2db0459f55a75628c76bbe038f3c4220b740ba0f4",
+    "src/agent_mem_bridge/telemetry.py": "36df7ee1d2dbe46aecf16e163ff108b3e816dfac338c5ade5ce6459899b5da45",
+    "src/agent_mem_bridge/telemetry_summary.py": "00b6049e319699b62e7f8aecf96849a24d827c3bf4165a1ff4eeff4610991155",
+    "src/agent_mem_bridge/watcher.py": "5d7ab9f4a4fb035d9f1ed4534251feac147a9d3d3ae9dc834283a1b33986d0f6",
+    "src/agent_mem_bridge/watcher_health.py": "9ac5838c1bb95b6523c54b434b7dbca7f5842cfa3654900e62e534ce8a9b3e60",
+    "src/agent_mem_bridge/write_side_capture.py": "b08bddd9b97559a1222c0a9128295d65e769ea46a1c5c41ab8aea8613dffe87a"
+  },
+  "source_stable": true,
+  "matched_binding_ok": true,
+  "condition": {
+    "host": {
+      "id": "codex",
+      "version": "codex-cli 0.160.0",
+      "model": "gpt-6-luna"
+    },
+    "pack": "v2",
+    "condition": "adapter_enabled",
+    "adapter_backend": "remote_loopback",
+    "hook_loading": "invocation_inline",
+    "case_ids": [
+      "fresh-session-continuation",
+      "architecture-constraint",
+      "known-project-gotcha",
+      "indirect-history-dependency",
+      "stale-superseded-conflict",
+      "no-relevant-memory",
+      "amb-unavailable",
+      "isolated-typo",
+      "repeated-recall",
+      "cross-client-handoff"
+    ],
+    "timeout_seconds": 150,
+    "outer_collector_timeout_seconds": 210,
+    "case_parallelism": 2,
+    "python_environment": "clean temporary venv with exact pinned worktree dependency versions",
+    "measurement": {
+      "revision": "codex-repo-read-v1",
+      "source_sha256": {
+        "tools/evidence/lifecycle_activation_measurement.py": "70ed144a081d8d735e91f1214b464e1b2df9c573b744986428861b078dc09187",
+        "tools/evidence/lifecycle_activation.py": "1fc618ccc523e6ed34dfb5a3ab19da98b5b9e953fb25a4903650d7e8c8c28e21",
+        "tools/evidence/lifecycle_activation_grade.py": "61683f3a7f87b661f7519a046ae22f20613d81566a599ef4d535c6c4bd05193a",
+        "benchmark/lifecycle-activation-codex-repo-read-v1.md": "0ccc6590923f49807d7d8e2e26cea51579c8d7d719cdd25b9f5eb3fce16f086b"
+      }
+    },
+    "freeze_sha256": {
+      "benchmark/lifecycle-activation-v2.json": "543d15ddb7655a81641aca073dd614168d844cb83f407cc825029e490b5d9ba6",
+      "benchmark/lifecycle-activation-v2.md": "c005fb62a05ece009389881fa686b0c90d6bd4ab383edb64ec89c8e3d945b9e1"
+    },
+    "scorer_sha256": "61683f3a7f87b661f7519a046ae22f20613d81566a599ef4d535c6c4bd05193a"
+  },
+  "report_sha256": "673db1d1a5bb3fbf22da6dbf1c6b6bb17ba6a7949f7879e1bbde5a480d6e267d",
+  "chronology": [
+    {
+      "status": "historical_baseline",
+      "PASS": 3,
+      "FAIL": 7,
+      "canonical_anchor": "benchmark/lifecycle-activation-codex-2026-10-03.anchor.json"
+    },
+    {
+      "status": "isolation_rejected",
+      "source_commit": "0ef0e02613f2c81376e59ade7fa8b833b403cc07",
+      "completed_cases": 1,
+      "NOT_RUN": 9,
+      "matched_gate_satisfied": false
+    },
+    {
+      "status": "scored_intermediate",
+      "source_commit": "58b1d6017fed3704bc3e6fca9533e064d5f48d50",
+      "PASS": 8,
+      "FAIL": 2,
+      "report_sha256": "8e0e66a7a53c3ba53455b743c80a46d4d21cfd9e2a0b7f6e20205d62a5bbeee2",
+      "failed_cases": [
+        "fresh-session-continuation",
+        "known-project-gotcha"
+      ]
+    },
+    {
+      "status": "scored_repaired",
+      "source_commit": "483c755e7299b96990b0a75f4363027c21138c47",
+      "PASS": 10,
+      "FAIL": 0,
+      "report_sha256": "673db1d1a5bb3fbf22da6dbf1c6b6bb17ba6a7949f7879e1bbde5a480d6e267d"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "fresh-session-continuation",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 0
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "decision": "recall",
+          "recall_invoked": true,
+          "recall_state": "hit",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "architecture-constraint",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 1
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "decision": "recall",
+          "recall_invoked": true,
+          "recall_state": "hit",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "known-project-gotcha",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 0
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "decision": "recall",
+          "recall_invoked": true,
+          "recall_state": "hit",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "indirect-history-dependency",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 0
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "decision": "recall",
+          "recall_invoked": true,
+          "recall_state": "hit",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "stale-superseded-conflict",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 1
+      },
+      "repo_paths_read": [
+        "NOTES.md"
+      ],
+      "repository_read_evidence": [
+        {
+          "path": "NOTES.md",
+          "event_line": 7,
+          "output_line": 1,
+          "item_id": "item_3",
+          "command_sha256": "1d8682da08b842ce8c333f443506c48ce62d44931f86e5967b2850097919ecdc",
+          "kind": "rg_matching_content_line"
+        }
+      ],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "decision": "reconcile",
+          "recall_invoked": true,
+          "recall_state": "stale_conflict",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "no-relevant-memory",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 0
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "decision": "recall",
+          "recall_invoked": true,
+          "recall_state": "no_hit",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "amb-unavailable",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 0
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "error",
+          "decision": "recall",
+          "recall_invoked": true,
+          "recall_state": "error",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "isolated-typo",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": null,
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 1
+      },
+      "repo_paths_read": [
+        "greeting.py"
+      ],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "unknown",
+          "decision": "skip",
+          "recall_invoked": false,
+          "recall_state": "skipped",
+          "namespace": null,
+          "resolution_status": "no_binding",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "repeated-recall",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 0
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "unknown",
+          "decision": "skip",
+          "recall_invoked": false,
+          "recall_state": "skipped",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    },
+    {
+      "case_id": "cross-client-handoff",
+      "collector_exit_code": 0,
+      "terminal_event": "turn.completed",
+      "trace_complete": true,
+      "durable_memory_unchanged": true,
+      "namespace_bound": "project:lifecycle-fixture",
+      "fixture_access": {
+        "direct_read": false,
+        "signals": [],
+        "command_count": 0
+      },
+      "repo_paths_read": [],
+      "repository_read_evidence": [],
+      "activation": [
+        {
+          "hook_event_name": "UserPromptSubmit",
+          "adapter_loaded": true,
+          "authority_mode": "remote",
+          "availability": "available",
+          "decision": "recall",
+          "recall_invoked": true,
+          "recall_state": "hit",
+          "namespace": "project:lifecycle-fixture",
+          "resolution_status": "bound",
+          "repeat_suppressed": false
+        }
+      ],
+      "isolation_preflight": true,
+      "model_tool_isolation_preflight": true
+    }
+  ],
+  "limitations": [
+    "Model/version labels are collector-declared, not authenticated vendor identity.",
+    "Hashes bind retained source/evidence bytes; they are not signatures or independent public raw-trace reconstruction.",
+    "Frozen repeated-recall is a budget/negative-control case; exact-material-repeat and compaction continuity remain separate auxiliary evidence.",
+    "Complete serial receipt association is covered; mixed/concurrent callback streams are not certified.",
+    "OpenCode remains NOT_RUN; no Windows native activation, project/plugin discovery, merge, issue closure or release approval is claimed."
+  ]
+}
