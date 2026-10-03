@@ -289,9 +289,12 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
         except Exception as exc:  # noqa: BLE001 - hook must fail closed without echoing the prompt
             recall_state = "error"
             error_type = type(exc).__name__
-            if authority_mode == "remote":
-                availability = "error"
-            context = "AMB recall failed. This is not an empty memory result. No fallback authority was used."
+            availability = "error"
+            context = (
+                "AMB recall failed: AMB was unavailable for this lookup. This is not an empty memory result. "
+                "No fallback authority was used. Tell the user that AMB was unavailable; "
+                "do not present missing history as a successful no-hit."
+            )
         else:
             useful, irrelevant, stale = _partition(items, prompt)
             recalled_ids = tuple(str(item.get("id") or "") for item in useful + irrelevant if item.get("id"))
@@ -591,7 +594,10 @@ def _memory_context(
         title = _one_line(str(item.get("title") or "Untitled memory"), 120)
         excerpt = _one_line(str(item.get("content") or ""), _EXCERPT_LIMIT)
         lines.append(f"- {title}: {excerpt}")
-    lines.append("Reconcile this context with the current repository before acting.")
+    lines.append(
+        "Read the relevant current repository files before acting or answering; "
+        "reconcile this context with that inspected evidence, not with an assumed current value."
+    )
     return "\n".join(lines)
 
 

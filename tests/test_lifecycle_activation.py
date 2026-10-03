@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 
+from agent_mem_bridge.activation_policy import classify_task_need
 from agent_mem_bridge.cli import main
 from agent_mem_bridge.lifecycle_activation import (
     activation_evidence_path,
@@ -31,6 +32,78 @@ ROOT = Path(__file__).resolve().parents[1]
 MATERIAL = "The schema choice for the run ledger may be constrained by a prior project decision. PROMPT-SECRET-991"
 MEMORY = "Prior decision: keep the run ledger schema constrained by the existing governance choice."
 STALE_MEMORY = "Superseded decision: the old setup used a different run ledger schema."
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        (
+            "Start fresh on this checkout. Reply with the continuation token recorded for the listener.",
+            ("recall", "fresh-session-or-handoff"),
+        ),
+        (
+            "Add a cache for the fixture service. Reply with the storage-authority token you must preserve.",
+            ("recall", "constrained-architecture-choice"),
+        ),
+        (
+            "I am about to refresh the fixture benchmark report. Reply with the gotcha token that applies before writing it.",
+            ("recall", "known-project-gotcha"),
+        ),
+        (
+            "Continue the backup approach we settled on before this checkout. Reply with the single approach token to follow.",
+            ("recall", "material-prior-context"),
+        ),
+        (
+            "Set the fixture listener. Reply with only the current port token.",
+            ("reconcile", "current-state-history-dependency"),
+        ),
+        (
+            "Is a checksum-exception token recorded for this project? If not, say that no relevant memory was found.",
+            ("recall", "recorded-project-context"),
+        ),
+        (
+            "Which gotcha token applies before writing the fixture benchmark report?",
+            ("recall", "known-project-gotcha"),
+        ),
+        (
+            "Another client left a handoff for this checkout's project. Reply with only that handoff token.",
+            ("recall", "fresh-session-or-handoff"),
+        ),
+    ],
+)
+def test_activation_policy_recognizes_frozen_material_prompt_shapes(prompt: str, expected: tuple[str, str]) -> None:
+    assert classify_task_need(prompt) == expected
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Add a cache beside the service.",
+        "Set the listener port to 2222.",
+        "Refresh the benchmark report.",
+        "Ask another client to review this checkout.",
+    ],
+)
+def test_activation_policy_skips_unrelated_near_misses(prompt: str) -> None:
+    assert classify_task_need(prompt) == ("skip", "no-material-history-need")
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Fix the typo in greeting.py.",
+        "Update the comment punctuation in NOTES.md.",
+    ],
+)
+def test_activation_policy_preserves_deterministic_skips(prompt: str) -> None:
+    assert classify_task_need(prompt) == ("skip", "not-for-deterministic-edit")
+
+
+def test_activation_policy_gives_explicit_history_precedence_over_a_typo() -> None:
+    assert classify_task_need("Fix the typo after applying the recorded project exception.") == (
+        "recall",
+        "recorded-project-context",
+    )
 
 
 def git(repo: Path, *args: str) -> None:
@@ -492,6 +565,7 @@ def test_stale_memory_is_labeled_and_not_treated_as_authority(tmp_path: Path, mo
     assert row["stale_ids"]
     assert "not durable authority" in context
     assert "Do not apply it over the live repository." in context
+    assert "Read the relevant current repository files before acting or answering" in context
     assert memory_count(home) == 1
 
 
