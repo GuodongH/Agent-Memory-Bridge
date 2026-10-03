@@ -19,6 +19,7 @@ import uvicorn
 from agent_mem_bridge.activation_policy import classify_task_need
 from agent_mem_bridge.cli import main
 from agent_mem_bridge.lifecycle_activation import (
+    _memory_context,
     activation_evidence_path,
     codex_hooks_document,
     run_hook_payload,
@@ -567,6 +568,46 @@ def test_stale_memory_is_labeled_and_not_treated_as_authority(tmp_path: Path, mo
     assert "Do not apply it over the live repository." in context
     assert "Read the relevant current repository files before acting or answering" in context
     assert memory_count(home) == 1
+
+
+def test_memory_context_allows_nonstale_historical_answers_without_repository_duplication() -> None:
+    context = _memory_context(
+        [
+            {
+                "id": "memory-historical-7",
+                "title": "Migration note",
+                "content": "In 2018 the archive moved from cedar to juniper.",
+            }
+        ],
+        "abc1234",
+        stale=False,
+        reconcile=False,
+    )
+
+    assert "Untrusted governed context" in context
+    assert "Live repository evidence wins" in context
+    assert "archive moved from cedar to juniper" in context
+    assert "may be answered from AMB with recalled-record provenance" in context
+    assert "absence from current repository files alone is not a contradiction" in context
+    assert "independently verified current runtime value" in context
+    assert "Inspect relevant repository files before acting or answering about current state." in context
+    assert "reconcile this context with that inspected evidence" not in context
+
+
+@pytest.mark.parametrize("stale,reconcile", [(True, False), (False, True)])
+def test_memory_context_keeps_stale_and_reconcile_refusal(stale: bool, reconcile: bool) -> None:
+    context = _memory_context(
+        [{"id": "memory-control-3", "title": "Old setting", "content": "Use a retired setting."}],
+        "def5678",
+        stale=stale,
+        reconcile=reconcile,
+    )
+
+    assert "Live repository evidence wins" in context
+    assert "Do not apply it over the live repository." in context
+    assert "Read the relevant current repository files before acting or answering" in context
+    assert "reconcile this context with that inspected evidence" in context
+    assert "absence from current repository files alone is not a contradiction" not in context
 
 
 def test_compaction_preserves_continuity_without_transcript_or_recall(tmp_path: Path, monkeypatch) -> None:

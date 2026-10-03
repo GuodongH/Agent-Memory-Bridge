@@ -594,10 +594,18 @@ def _memory_context(
         title = _one_line(str(item.get("title") or "Untitled memory"), 120)
         excerpt = _one_line(str(item.get("content") or ""), _EXCERPT_LIMIT)
         lines.append(f"- {title}: {excerpt}")
-    lines.append(
-        "Read the relevant current repository files before acting or answering; "
-        "reconcile this context with that inspected evidence, not with an assumed current value."
-    )
+    if stale or reconcile:
+        lines.append(
+            "Read the relevant current repository files before acting or answering; "
+            "reconcile this context with that inspected evidence, not with an assumed current value."
+        )
+    else:
+        lines.append(
+            "A recorded historical fact or project gotcha may be answered from AMB with recalled-record provenance; "
+            "its absence from current repository files alone is not a contradiction. Do not present it as an "
+            "independently verified current runtime value. Inspect relevant repository files before acting or "
+            "answering about current state."
+        )
     return "\n".join(lines)
 
 
