@@ -933,7 +933,13 @@ def render_host_plan(pack: dict[str, Any], host: str, case_id: str) -> str:
     )
 
 
-def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None) -> dict[str, Any]:
+def parse_codex_exec_jsonl(
+    text: str, interesting_paths: list[str] | None = None, *, measurement_revision: str = "legacy-v2"
+) -> dict[str, Any]:
+    from tools.evidence.lifecycle_activation_measurement import READ_REVISION, REVISIONS, rg_read_evidence
+
+    if measurement_revision not in REVISIONS:
+        raise ValueError(f"unsupported measurement revision {measurement_revision}")
     tool_calls: list[dict[str, Any]] = []
     final_parts: list[str] = []
     repo_paths: list[str] = []
@@ -976,7 +982,9 @@ def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None
                         "output": str(item.get("aggregated_output") or item.get("output") or ""),
                     }
                 )
-    return {
+    read_evidence = rg_read_evidence(text, interesting_paths or []) if measurement_revision == READ_REVISION else []
+    repo_paths.extend(read["path"] for read in read_evidence)
+    result = {
         "event_count": events,
         "tool_calls": tool_calls,
         "commands": commands,
@@ -986,6 +994,9 @@ def parse_codex_exec_jsonl(text: str, interesting_paths: list[str] | None = None
         "output_tokens": usage.get("output_tokens"),
         "terminal_event": terminal_event,
     }
+    if measurement_revision == READ_REVISION:
+        result["repository_read_evidence"] = read_evidence
+    return result
 
 
 def _opencode_strings(tool_input: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
@@ -1185,6 +1196,8 @@ def write_scored_observation(
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "observation.json").write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
     report = score_pack(pack, [observation], freeze=freeze)
+    if "measurement" in observation:
+        report["measurement"] = observation["measurement"]
     (out_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
 

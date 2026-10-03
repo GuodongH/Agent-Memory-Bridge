@@ -28,6 +28,13 @@ the engine gets more expressive.
 - `python ./scripts/run_v019_adoption_proof.py`
 - `python ./scripts/run_v020_clean_room_proof.py`
 
+For the frozen lifecycle pack's isolated Codex HTTP condition, live evaluation
+and secondary-host rerun commands, see
+[Lifecycle activation live evaluation](lifecycle-activation-live-evaluation.md).
+The opt-in [Codex read-measurement revision](lifecycle-activation-codex-repo-read-v1.md)
+adds source-bound `rg` read evidence and full-cohort re-scoring while preserving
+the original v2 result and unchanged decision grader.
+
 ## Planning Manifests
 
 - `benchmark/v0.19-fixture-manifest.json` is the planned `0.19` proof-breadth

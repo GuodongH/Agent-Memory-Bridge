@@ -18,6 +18,13 @@ from _source_imports import ensure_source_root
 ensure_source_root()
 
 from tools.evidence._temporary_store import ScopedTemporaryMemoryStore
+from tools.evidence.lifecycle_activation_measurement import (
+    LEGACY_REVISION,
+    READ_REVISION,
+    REVISIONS,
+    measurement_identity,
+    rescore_codex,
+)
 from tools.evidence.lifecycle_activation import (
     ROOT,
     assess_fixture_access,
@@ -86,7 +93,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "score":
         return _score(args.observations, args.format, args.report_path, args.pack)
     if args.command == "collect-codex":
-        return collect_codex(args.case_id, args.out, args.model, args.timeout, args.pack, args.condition)
+        return collect_codex(
+            args.case_id,
+            args.out,
+            args.model,
+            args.timeout,
+            args.pack,
+            args.condition,
+            args.adapter_backend,
+            args.measurement_revision,
+        )
+    if args.command == "rescore-codex":
+        try:
+            manifest = rescore_codex(args.evidence_root, args.out)
+        except (ValueError, OSError) as exc:
+            print(json.dumps({"ok": False, "reason": str(exc)}), file=sys.stderr)
+            return 1
+        print(json.dumps(manifest, indent=2))
+        return 0
     if args.command == "collect-opencode":
         return collect_opencode(args.case_id, args.out, args.model, args.timeout, args.pack, args.condition)
     parser.error(f"unsupported command {args.command}")
@@ -255,13 +279,13 @@ def _start_fixture_http(store_home: Path, python_path: Path) -> tuple[subprocess
             str(python_path),
             "-m",
             "agent_mem_bridge",
-            "serve-http",
+            "serve",
+            "--transport",
+            "streamable-http",
             "--host",
             "127.0.0.1",
             "--port",
             str(port),
-            "--path",
-            "/mcp",
             "--token-file",
             str(token_path),
             "--allowed-host",
@@ -308,12 +332,23 @@ def collect_codex(
     timeout: float,
     pack_version: str = "v1",
     condition: str = "plain_mcp_baseline",
+    adapter_backend: str = "local",
+    measurement_revision: str = LEGACY_REVISION,
 ) -> int:
+    if measurement_revision not in REVISIONS:
+        print("unsupported measurement revision", file=sys.stderr)
+        return 2
+    measurement = measurement_identity() if measurement_revision == READ_REVISION else None
     if condition == "adapter_enabled" and pack_version != "v2":
         print("adapter collection requires the frozen v2 pack", file=sys.stderr)
         return 2
     if condition not in {"plain_mcp_baseline", "adapter_enabled"}:
         print(f"unsupported condition {condition}", file=sys.stderr)
+        return 2
+    if adapter_backend not in {"local", "remote_loopback"} or (
+        adapter_backend == "remote_loopback" and condition != "adapter_enabled"
+    ):
+        print("remote_loopback requires the adapter_enabled condition", file=sys.stderr)
         return 2
     freeze = verify_freeze(version=pack_version)
     if not freeze["ok"]:
@@ -354,15 +389,52 @@ def collect_codex(
     codex_home.mkdir(parents=True, exist_ok=True)
     codex_home.chmod(0o700)
     server: subprocess.Popen[str] | None = None
+    unavailable_socket = None
+    bridge_home = store_home
+    fixture_secrets: list[str] = []
+    hook_overrides: list[str] = []
     try:
         if condition == "adapter_enabled":
-            bridge_python = _bridge_python()
+            bridge_python = Path(sys.executable) if adapter_backend == "remote_loopback" else _bridge_python()
+            hook_python = bridge_python
+            authority_url = None
+            hook_token = None
+            if adapter_backend == "remote_loopback":
+                import socket
+
+                bridge_home = codex_home / "bridge"
+                (bridge_home / "repository").mkdir(parents=True)
+                shutil.copyfile(
+                    store_home / "repository" / "bindings.json", bridge_home / "repository" / "bindings.json"
+                )
+                if case["fixture"]["amb_mode"] == "available":
+                    server, authority_url, token_source = _start_fixture_http(store_home, bridge_python)
+                    hook_token = bridge_home / "http-token"
+                    hook_token.write_bytes(token_source.read_bytes())
+                    hook_token.chmod(0o600)
+                    fixture_secrets.append(hook_token.read_text(encoding="utf-8").strip())
+                else:
+                    # Reserve the unavailable endpoint for the entire run.
+                    unavailable_socket = socket.socket()
+                    unavailable_socket.bind(("127.0.0.1", 0))
+                    authority_url = f"http://127.0.0.1:{unavailable_socket.getsockname()[1]}/mcp"
+                hook_python = Path("/opt/amb-lifecycle-python/bin/python")
+                command = f"/usr/bin/python3 {codex_home / 'hook_capture.py'}"
+                hook_overrides = [
+                    "features.hooks=true",
+                    'hooks.UserPromptSubmit=[{hooks=[{type="command",command='
+                    + json.dumps(command)
+                    + ",timeout=10}]}]",
+                ]
             _install_adapter_hook(
                 codex_home=codex_home,
                 fixture_repo=fixture_repo,
-                store_home=store_home,
-                python_path=bridge_python,
+                store_home=bridge_home,
+                python_path=hook_python,
                 source_mount=Path("/opt/amb-lifecycle-src"),
+                authority_url=authority_url,
+                token_file=hook_token,
+                install_project_hooks=adapter_backend == "local",
             )
             codex_config = ""
         elif case["fixture"]["amb_mode"] == "available":
@@ -403,7 +475,7 @@ def collect_codex(
         (codex_home / "config.toml").write_text(preamble + codex_config, encoding="utf-8")
         native = _codex_native()
         node_prefix = _node_prefix(native)
-        venv = _bridge_python().parent.parent
+        venv = bridge_python.parent.parent if adapter_backend == "remote_loopback" else _bridge_python().parent.parent
         api_key, base_url = _model_gateway()
         override = model_provider_override(base_url)
         markers = memory_only_markers(case)
@@ -417,13 +489,18 @@ def collect_codex(
         bwrap = _require_bwrap()
         source_mount = Path("/opt/amb-lifecycle-src")
         protected = [ROOT, Path.home() / ".codex", Path.home() / ".cache", Path("/tmp")]
-        ro_binds = [(node_prefix, node_prefix), (venv, venv)]
+        venv_mount = Path("/opt/amb-lifecycle-python") if adapter_backend == "remote_loopback" else venv
+        ro_binds = [(node_prefix, node_prefix), (venv, venv_mount)]
         rw_binds = [(codex_home, codex_home), (layout["workspace_parent"], layout["workspace_parent"])]
-        scan_roots = [node_prefix, venv, fixture_repo, codex_home]
+        scan_roots = [node_prefix, venv_mount, fixture_repo, codex_home]
         absent = [ROOT, Path.home() / ".codex", Path.home() / ".cache"]
         if condition == "adapter_enabled":
             ro_binds.append((ROOT / "src", source_mount))
-            rw_binds.append((store_home, store_home))
+            if adapter_backend == "local":
+                rw_binds.append((store_home, store_home))
+            else:
+                protected.append(store_home)
+                absent.extend([store_home, store_home / "fixture-store.sqlite"])
             scan_roots.append(source_mount)
         else:
             protected.append(store_home)
@@ -493,7 +570,7 @@ def collect_codex(
             output_path=fixture_repo.parent / "last-message.md",
             prompt=case["prompt"],
             codex_bin=str(native),
-            config_overrides=[override],
+            config_overrides=[override, *hook_overrides],
             condition=condition,
         )
         if "--add-dir" in argv or str(store_home) in argv or ":58080" in " ".join(argv):
@@ -523,17 +600,21 @@ def collect_codex(
             stderr = f"{stderr}\ncollector timeout\n"
             returncode = None
         elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
-        secrets = [api_key]
+        secrets = [api_key, *fixture_secrets]
         token_path = codex_home / "proxy-token"
         if token_path.is_file():
             secrets.append(token_path.read_text(encoding="utf-8").strip())
         stdout_path.write_text(_redact(stdout, secrets), encoding="utf-8")
         (out_dir / "stderr.txt").write_text(_redact(stderr, secrets), encoding="utf-8")
-        parsed = parse_codex_exec_jsonl(stdout, interesting_paths=list(case["fixture"]["files"]))
+        parsed = parse_codex_exec_jsonl(
+            stdout,
+            interesting_paths=list(case["fixture"]["files"]),
+            measurement_revision=measurement_revision,
+        )
         fixture_access = assess_fixture_access(
             parsed["commands"],
             markers=markers,
-            hidden_paths=[str(store_home)],
+            hidden_paths=[str(store_home), "fixture-store.sqlite"],
         )
         observation = _redact_obj(
             {
@@ -545,6 +626,10 @@ def collect_codex(
                 "terminal_event": parsed["terminal_event"],
                 "execution_kind": "live",
                 "condition": condition,
+                "adapter_backend": adapter_backend,
+                "hook_loading": ("invocation_inline" if adapter_backend == "remote_loopback" else "project_hooks")
+                if condition == "adapter_enabled"
+                else None,
                 "pack": pack_version,
                 "host": {"id": "codex", "version": version, "model": model},
                 "amb_available": case["fixture"]["amb_mode"] == "available",
@@ -559,20 +644,23 @@ def collect_codex(
                 "collector_exit_code": returncode,
                 "freeze_sha256": freeze["actual"],
                 "scorer_sha256": scorer_sha256(),
-                "adapter": _adapter_observation(store_home) if condition == "adapter_enabled" else {"loaded": False},
-                "adapter_evidence": _adapter_evidence(store_home) if condition == "adapter_enabled" else [],
+                "adapter": _adapter_observation(bridge_home) if condition == "adapter_enabled" else {"loaded": False},
+                "adapter_evidence": _adapter_evidence(bridge_home) if condition == "adapter_enabled" else [],
             },
             secrets,
         )
-        (out_dir / "observation.json").write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
-        report = score_pack(pack, [observation], freeze=freeze)
-        (out_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        if measurement is not None:
+            observation["measurement"] = measurement
+            observation["repository_read_evidence"] = parsed["repository_read_evidence"]
+        report = write_scored_observation(out_dir, pack, observation, freeze)
         print(render_text(report), end="")
         if returncode is None:
             return 1
         return 0 if returncode == 0 or observation["trace_complete"] else returncode
     finally:
         _stop_process(server)
+        if unavailable_socket is not None:
+            unavailable_socket.close()
 
 
 def collect_opencode(
@@ -783,6 +871,9 @@ def _install_adapter_hook(
     store_home: Path,
     python_path: Path,
     source_mount: Path,
+    authority_url: str | None = None,
+    token_file: Path | None = None,
+    install_project_hooks: bool = True,
 ) -> None:
     capture = codex_home / "hook_capture.py"
     log_path = store_home / "lifecycle" / "hook-responses.jsonl"
@@ -797,12 +888,17 @@ def _install_adapter_hook(
                 f"env['PYTHONPATH'] = {str(source_mount)!r}",
                 f"env['AGENT_MEMORY_BRIDGE_HOME'] = {str(store_home)!r}",
                 f"env['AGENT_MEMORY_BRIDGE_CONFIG'] = {str(config_path)!r}",
-                "env.pop('AGENT_MEMORY_BRIDGE_AUTHORITY_URL', None)",
+                "env.pop('AGENT_MEMORY_BRIDGE_AUTHORITY_URL', None)"
+                if authority_url is None
+                else f"env['AGENT_MEMORY_BRIDGE_AUTHORITY_URL'] = {authority_url!r}",
+                "env.pop('AGENT_MEMORY_BRIDGE_HTTP_TOKEN_FILE', None)"
+                if token_file is None
+                else f"env['AGENT_MEMORY_BRIDGE_HTTP_TOKEN_FILE'] = {str(token_file)!r}",
                 f"completed = subprocess.run([{str(python_path)!r}, '-m', 'agent_mem_bridge', 'lifecycle-hook'], input=payload, text=True, capture_output=True, env=env)",
                 f"log = Path({str(log_path)!r})",
                 "log.parent.mkdir(parents=True, exist_ok=True)",
                 "with log.open('a', encoding='utf-8') as handle:",
-                "    handle.write(json.dumps({'returncode': completed.returncode, 'stdout': completed.stdout}) + '\\n')",
+                "    handle.write(json.dumps({'returncode': completed.returncode, 'stdout': completed.stdout}) + chr(10))",
                 "sys.stdout.write(completed.stdout)",
                 "raise SystemExit(completed.returncode)",
                 "",
@@ -811,6 +907,8 @@ def _install_adapter_hook(
         encoding="utf-8",
     )
     command = f"/usr/bin/python3 {capture}"
+    if not install_project_hooks:
+        return
     document = {
         "description": "Optional AMB lifecycle activation for one benchmark run.",
         "hooks": {
@@ -888,6 +986,13 @@ def _score(observations_path: Path, output_format: str, report_path: Path | None
         print("observations must be a JSON list", file=sys.stderr)
         return 2
     report = score_pack(load_pack(version=pack_version), observations, freeze=freeze)
+    identities = [item.get("measurement") for item in observations]
+    if any(identity is not None for identity in identities):
+        identity = measurement_identity()
+        if any(seen != identity for seen in identities):
+            print("mixed or mismatched measurement revisions", file=sys.stderr)
+            return 2
+        report["measurement"] = identity
     rendered = render_text(report) if output_format == "text" else json.dumps(report, indent=2) + "\n"
     if report_path is not None:
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -958,6 +1063,11 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument("--out", type=Path, required=True)
     collect.add_argument("--model", default="grok-4.7-build-fast")
     collect.add_argument("--timeout", type=float, default=240)
+    collect.add_argument("--adapter-backend", choices=("local", "remote_loopback"), default="local")
+    collect.add_argument("--measurement-revision", choices=REVISIONS, default=LEGACY_REVISION)
+    rescore = subparsers.add_parser("rescore-codex", help="Source-bound re-score of all ten saved v2 Codex traces.")
+    rescore.add_argument("--evidence-root", type=Path, required=True)
+    rescore.add_argument("--out", type=Path, required=True)
     opencode = subparsers.add_parser("collect-opencode", help="Run one isolated OpenCode case and score its trace.")
     opencode.add_argument("--case-id", default="known-project-gotcha")
     opencode.add_argument("--pack", choices=("v2",), default="v2")
