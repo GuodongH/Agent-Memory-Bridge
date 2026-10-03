@@ -623,6 +623,9 @@ def _install_adapter_hook(
         encoding="utf-8",
     )
     command = shlex.join(["/usr/bin/python3", str(capture)])
+    # Native workspace protection needs a directory even when hooks are inline.
+    hook_dir = fixture_repo / ".codex"
+    hook_dir.mkdir(parents=True, exist_ok=True)
     if not install_project_hooks:
         return
     document = {
@@ -640,8 +643,6 @@ def _install_adapter_hook(
             ],
         },
     }
-    hook_dir = fixture_repo / ".codex"
-    hook_dir.mkdir(parents=True, exist_ok=True)
     (hook_dir / "hooks.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
 

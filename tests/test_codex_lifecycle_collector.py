@@ -97,6 +97,24 @@ def test_null_namespace_control_does_not_bind_string_none(collector, tmp_path) -
     assert not (home / "repository/bindings.json").exists()
 
 
+def test_inline_hook_keeps_private_directory_without_project_hook_file(collector, tmp_path) -> None:
+    client, repo = tmp_path / "client", tmp_path / "repo"
+    client.mkdir()
+    repo.mkdir()
+    collector._install_adapter_hook(
+        codex_home=client,
+        fixture_repo=repo,
+        store_home=client / "bridge",
+        python_path=Path(sys.executable),
+        source_mount=Path("/opt/amb-lifecycle-src"),
+        authority_url="http://127.0.0.1:1234/mcp",
+        install_project_hooks=False,
+    )
+    assert (repo / ".codex").is_dir()
+    assert not (repo / ".codex/hooks.json").exists()
+    assert (client / "hook_capture.py").is_file()
+
+
 def test_source_receipt_includes_edited_policy_and_resolver(collector) -> None:
     identity = collector._source_sha256()
     assert all("\\" not in path for path in identity)
