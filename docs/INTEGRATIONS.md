@@ -9,7 +9,7 @@ Agent Memory Bridge is a local-first stdio MCP server. The stable contract is:
 
 That means the generic stdio shape matters more than any one IDE's UI.
 
-The current source/package line is `0.34.1` with exactly 17 public MCP tools. The normal install route is `pip install agent-memory-bridge`; GitHub Releases remains the publication authority for source tags and release notes. Knowledge Explorer is a CLI-only, read-only derived projection over existing project knowledge; use a source checkout to evaluate an exact checkout and consult GitHub Releases for live publication availability.
+The current source/package line is `0.35.0` with exactly 17 public MCP tools. The normal install route is `pip install agent-memory-bridge`; GitHub Releases remains the publication authority for source tags and release notes. Knowledge Explorer is a CLI-only, read-only derived projection over existing project knowledge; use a source checkout to evaluate an exact checkout and consult GitHub Releases for live publication availability.
 
 Optional [Streamable HTTP deployment](REMOTE-DEPLOYMENT.md) connects remote
 clients to one host-local authority. The local stdio setup below is unchanged;
