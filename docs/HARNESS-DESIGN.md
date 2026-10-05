@@ -1,5 +1,7 @@
 # Harness Design
 
+> **Current status note**: Harness adoption is outside AMB Core. This document is design background, not setup or client installation guidance.
+
 Status: historical design note. The current integration direction is now tracked
 in [ROADMAP.md](ROADMAP.md) under "Active Integration Track: AMB As The Unified
 Entry" and in [CONTEXT-ASSEMBLY.md](CONTEXT-ASSEMBLY.md). Treat this document as

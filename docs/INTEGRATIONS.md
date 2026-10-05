@@ -1,92 +1,28 @@
-# Client Integrations
+# Generic Installer and Server Contract
 
-Agent Memory Bridge is a local-first stdio MCP server. The stable contract is:
+Agent Memory Bridge is a local-first stdio MCP server. The generic installer and server contract is:
 
-- the client launches a local subprocess
+- the host or client launches `<venv-python> -m agent_mem_bridge` as a local subprocess
 - the bridge reads JSON-RPC on `stdin`
 - the bridge writes JSON-RPC on `stdout`
-- optional environment variables set bridge home, config path, and provenance defaults
+- every client or process sharing project memory points to one shared `AGENT_MEMORY_BRIDGE_HOME`
 
-That means the generic stdio shape matters more than any one IDE's UI.
+Connecting a specific coding client is outside AMB Core. AMB does not discover, write, or certify Codex, Claude, Cursor, OpenCode, Hermes, Cline, VS Code, or Antigravity. Clients configure stdio subprocess launching independently. The historical `v0.35.0` tag still contains the old per-client notes.
 
-The current source/package line is `0.35.0` with exactly 17 public MCP tools. The normal install route is `pip install agent-memory-bridge`; GitHub Releases remains the publication authority for source tags and release notes. Knowledge Explorer is a CLI-only, read-only derived projection over existing project knowledge; use a source checkout to evaluate an exact checkout and consult GitHub Releases for live publication availability.
+The current source/package line is `0.35.0` with exactly 17 public MCP tools. The normal install route is `pip install agent-memory-bridge`; GitHub Releases remains the publication authority for source tags and release notes. Published release availability is listed in GitHub Releases; the published v0.30.0 source archive is `https://github.com/zzhang82/Agent-Memory-Bridge/archive/refs/tags/v0.30.0.zip`. The pinned `v0.27.0` route is a historical published baseline.
 
-Optional [Streamable HTTP deployment](REMOTE-DEPLOYMENT.md) connects remote
-clients to one host-local authority. The local stdio setup below is unchanged;
-it does not configure remote HTTP clients or create a local fallback writer.
-Its schema digest is
-`24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8`.
-Schema v12 retains governed-v2 receipts, typed event/CAS rules, one-snapshot
-recovery, and fail-closed projection handling, while adding an isolated internal
-Dynamic State release lane. Dynamic State uses typed commands, version/database-
-epoch guards, lifecycle idempotency, immutable history, and rebuildable heads;
-it adds no MCP tool and does not alter client integration behavior. Watcher
-continuity uses incremental cursors, explicit close, and explicit continuation.
-Utility and consolidation remain shadow-only. The pinned `v0.27.0` route is a
-historical published baseline. Published release availability is listed in
-GitHub Releases; the published v0.30.0 source archive is
-`https://github.com/zzhang82/Agent-Memory-Bridge/archive/refs/tags/v0.30.0.zip`.
+## Generic Stdio Command Shape
 
-## Status Labels
-
-- `Verified`: we have a real local proof path for this client or config surface
-- `Documented`: official docs support the shape and we provide a copyable example
-- `Locally tested`: we dogfooded the client path locally, but the config UX is still app-specific
-- `Supported`: the MCP spec path is generic stdio, not a client-specific promise
-
-## Support Matrix
-
-| Client | Status | Notes |
-|---|---|---|
-| Codex | Verified reference client | Strongest dogfood path today |
-| Generic stdio MCP | Supported | Works anywhere the client can launch a local stdio server |
-| VS Code / Copilot | Documented | Uses VS Code's `servers` object in `mcp.json` |
-| Claude Code | Documented | Official `claude mcp add --transport stdio` flow exists |
-| Claude Desktop | Documented | Local `mcpServers` JSON is documented; desktop extensions are separate |
-| Cursor | Documented | Current docs describe MCP JSON config with stdio entries |
-| Cline | Documented | Uses `mcpServers` JSON config |
-| Antigravity | Locally tested | Shared-MCP writes were observed locally; exact config file path can vary |
-| OpenCode | Locally tested | Local JSON `mcp` command shape was dogfooded locally |
-| Hermes | Locally tested | Local YAML `mcp_servers` shape was dogfooded locally; adapter workflows remain manual |
-
-## Evidence And Contributions
-
-`Documented` means the example matches the linked first-party client docs. It
-does not mean the client vendor certified Agent Memory Bridge or that a
-marketplace listing exists.
-
-To report a successful install, blocker, or stale client shape, use the
-[client integration issue form](https://github.com/zzhang82/Agent-Memory-Bridge/issues/new?template=client_integration_request.yml).
-Include the client and version, operating system, GitHub revision or install
-source, redacted config shape, and exact validation result. A status should move
-to `Locally tested` or `Verified` only with reproducible evidence.
-
-For the Phase 1 pilot, reply with outcomes to
-[Discussion #4](https://github.com/zzhang82/Agent-Memory-Bridge/discussions/4).
-Use the integration issue form instead for a separate reproducible setup or
-documentation defect.
-
-Contributions should stay client-specific: cite the official client docs,
-update the renderer test when generated output changes, and avoid secrets,
-machine paths, marketplace claims, or claims that AMB replaces client-native
-memory.
-
-## Generic Stdio First
-
-Installing AMB and registering it with a coding client are separate steps. `pip install agent-memory-bridge` installs the server on the machine; each client that should use AMB must still register it as an MCP stdio server. Clients that should share one project memory should point to the same persistent `AGENT_MEMORY_BRIDGE_HOME`.
-
-If your client can launch a local subprocess and speak stdio MCP, start here:
+Use the virtualenv Python as the command and `-m agent_mem_bridge` as arguments:
 
 ```json
 {
   "mcpServers": {
     "agentMemoryBridge": {
-      "command": "/path/to/agent-memory-bridge/.amb-venv/bin/python",
+      "command": "<venv-python>",
       "args": ["-m", "agent_mem_bridge"],
-      "cwd": "/path/to/agent-memory-bridge",
       "env": {
-        "AGENT_MEMORY_BRIDGE_HOME": "/path/to/bridge-home",
-        "AGENT_MEMORY_BRIDGE_CONFIG": "/path/to/agent-memory-bridge-config.toml",
+        "AGENT_MEMORY_BRIDGE_HOME": "/path/to/shared-bridge-home",
         "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT": "generic",
         "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT": "stdio"
       }
@@ -95,499 +31,73 @@ If your client can launch a local subprocess and speak stdio MCP, start here:
 }
 ```
 
-For the Phase 1 pilot, choose one persistent `AGENT_MEMORY_BRIDGE_HOME` and use
-it in every client configuration. Render the approved client's real fragment
-before editing its config:
-
-```text
-<venv-python> -m agent_mem_bridge config --client <client> --python "<venv-python>" --cwd "<absolute-path-to-your-project>" --bridge-home "<absolute-path-to-one-persistent-bridge-home>"
-```
-
-The generated default config path is optional for this baseline. If no file
-exists there, `doctor` may warn and the baseline server can still run. Use
-`--example` only when you need placeholder-safe output for documentation; without
-it, the renderer uses the supplied Python path and bridge home, plus the project
-cwd where the target client supports one.
-
-After the client registration gate passes, use `store(...)` and `recall(...)` as
-MCP tool calls through that configured client, not as terminal subcommands.
-
-For a GitHub-source install that does not assume `uv`, follow
-[`llms-install.md`](../llms-install.md), derive the isolated venv interpreter,
-and use that value as the stdio command. `uvx` is an optional shortcut only.
-
-### Static-schema placeholders
-
-Some MCP clients keep static tool schemas and may include signal-only fields on
-`kind="memory"` paths: for example `ttl_seconds` or `expires_at` on `store`, and
-`signal_status` on `recall`, `browse`, or `export`. AMB normalizes those fields at
-the stdio MCP boundary when `kind="memory"`, so static-schema clients do not have
-to strip them before calling the tools.
-
-That compatibility does not merge the memory and signal lanes. Non-empty signal
-lifecycle values are not applied to `kind="memory"`; they remain valid only on
-`kind="signal"` paths, and lower-level store/repository behavior stays strict.
-
-### Two-Client Activation Receipt
-
-Use this when you want a local receipt that one client wrote reviewed project
-memory and a second client read it under the same correlation. The receipt uses
-declared `source_client` labels only. It does not authenticate identity, certify
-the vendor, or prove external adoption.
-
-The setup uses the existing public MCP operations:
-
-```text
-# Client A stores one reviewed project memory.
-store(
-  namespace="project:demo",
-  kind="memory",
-  title="Reviewed SQLite guidance",
-  content="record_type: gotcha\nclaim: Use WAL mode for concurrent SQLite readers.",
-  tags=["workflow:cross-client-activation", "activation-role:writer", "reviewed:true"],
-  correlation_id="activation-demo-001",
-  source_client="client-a"
-)
-
-# Save the returned id as <writer_memory_id>.
-```
-
-Client B should recall the same correlation before it records the read signal:
-
-```text
-recall(
-  namespace="project:demo",
-  query="SQLite concurrent readers",
-  kind="memory",
-  correlation_id="activation-demo-001"
-)
-
-store(
-  namespace="project:demo",
-  kind="signal",
-  content="{\"observed_memory_id\":\"<writer_memory_id>\"}",
-  tags=["workflow:cross-client-activation", "activation-role:reader"],
-  correlation_id="activation-demo-001",
-  source_client="client-b"
-)
-
-ack_signal(id="<reader_signal_id>")
-```
-
-Then render the local receipt:
-
-```bash
-<venv-python> -m agent_mem_bridge activation-receipt --namespace project:demo --correlation-id activation-demo-001 --format markdown
-```
-
-A passing receipt means exactly one writer memory and one acked reader signal
-matched the namespace and correlation, the reader's `observed_memory_id` matched
-the writer record id, and the two declared `source_client` labels were present
-and distinct. The receipt hashes namespace, correlation id, record ids, and
-source-client labels; it does not include raw memory content, private paths,
-session ids, model ids, or client workspace values.
-
-If a client sets `AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT`, AMB can fill
-`source_client` when the client omits it. For activation receipts, make the two
-declared labels explicit in your review notes so the receipt is inspectable.
+Point every client or process that should share this project memory at the same `AGENT_MEMORY_BRIDGE_HOME`.
 
 ### Dockerized Stdio
 
-If your client can launch Docker as the subprocess, keep stdin open and mount a
-host-owned bridge home into the image:
-
-```bash
-docker build -t agent-memory-bridge:local .
-docker run --rm -i \
-  -e AGENT_MEMORY_BRIDGE_HOME=/data/agent-memory-bridge \
-  -v /path/to/bridge-home:/data/agent-memory-bridge \
-  agent-memory-bridge:local
-```
-
-The equivalent `mcpServers` shape is:
-
-```json
-{
-  "mcpServers": {
-    "agentMemoryBridge": {
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "-e",
-        "AGENT_MEMORY_BRIDGE_HOME=/data/agent-memory-bridge",
-        "-e",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT=generic",
-        "-e",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT=stdio",
-        "-v",
-        "/path/to/bridge-home:/data/agent-memory-bridge",
-        "agent-memory-bridge:local"
-      ]
-    }
-  }
-}
-```
-
-If you mount a config file, pass it explicitly:
+If running via Docker, keep stdin open and mount a host-owned bridge home into the container:
 
 ```bash
 docker run --rm -i \
   -e AGENT_MEMORY_BRIDGE_HOME=/data/agent-memory-bridge \
-  -e AGENT_MEMORY_BRIDGE_CONFIG=/config/config.toml \
+  -e AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT=generic \
+  -e AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT=stdio \
   -v /path/to/bridge-home:/data/agent-memory-bridge \
-  -v /path/to/agent-memory-bridge-config.toml:/config/config.toml:ro \
   agent-memory-bridge:local
 ```
 
-## VS Code / Copilot
+### Static-Schema Compatibility
 
-Status: `Documented`
+Some MCP clients keep static tool schemas and may include signal-only fields on `kind="memory"` paths (for example `ttl_seconds` or `expires_at` on `store`, and `signal_status` on `recall`, `browse`, or `export`). AMB normalizes those fields at the stdio MCP boundary when `kind="memory"`, without merging the memory and signal lanes.
 
-[VS Code's current MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
-uses a top-level `servers` object in workspace or user-profile `mcp.json`. The
-workspace file is `.vscode/mcp.json`; use **MCP: Open User Configuration** for a
-user-scoped install.
+## Project Initialization
 
-```json
-{
-  "servers": {
-    "agentMemoryBridge": {
-      "type": "stdio",
-      "command": "<venv-python>",
-      "args": ["-m", "agent_mem_bridge"],
-      "env": {
-        "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT": "vscode",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
-```
-
-Review the command and trust prompt before starting the server. This is a VS
-Code MCP configuration for use by agent chat, not a Visual Studio Marketplace
-extension or an MCP gallery claim.
-
-## Codex
-
-Status: `Verified reference client`
-
-Codex uses `config.toml` with `[mcp_servers.<name>]` entries for stdio servers.
-
-```toml
-[mcp_servers.agentMemoryBridge]
-command = "/path/to/agent-memory-bridge/.amb-venv/bin/python"
-args = ["-m", "agent_mem_bridge"]
-cwd = "/path/to/agent-memory-bridge"
-
-[mcp_servers.agentMemoryBridge.env]
-AGENT_MEMORY_BRIDGE_HOME = "/path/to/bridge-home"
-AGENT_MEMORY_BRIDGE_CONFIG = "/path/to/agent-memory-bridge-config.toml"
-AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT = "codex"
-AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT = "stdio"
-```
-
-You can also manage Codex MCP servers from the `codex mcp` CLI, but the static
-TOML example above is the most direct bridge-side shape.
-
-## Claude Code
-
-Status: `Documented`
-
-[Claude Code documents](https://code.claude.com/docs/en/mcp) a local stdio add
-flow:
+Initialize or resolve the project checkout using AMB's project primitives:
 
 ```bash
-claude mcp add --transport stdio \
-  --env AGENT_MEMORY_BRIDGE_HOME=/path/to/bridge-home \
-  --env AGENT_MEMORY_BRIDGE_CONFIG=/path/to/agent-memory-bridge-config.toml \
-  --env AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT=claude-code \
-  --env AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT=stdio \
-  agentMemoryBridge -- /path/to/agent-memory-bridge/.amb-venv/bin/python -m agent_mem_bridge
+<venv-python> -m agent_mem_bridge project init .
 ```
 
-For a checked-in project configuration, use the generic `mcpServers` shape in
-`.mcp.json` and review Claude Code's project trust prompt. For user scope, prefer
-`claude mcp add --scope user ...` rather than editing internal config by hand.
+`project init` detects the local Git repository, proposes a namespace such as `project:my-app`, waits for confirmation, and derives a repository baseline.
 
-## Claude Desktop
-
-Status: `Documented`
-
-Claude Desktop local MCP configuration uses an `mcpServers` JSON object for
-local stdio servers. Desktop extensions and MCPB packaging are a separate
-distribution path and are intentionally out of scope for this release.
-
-```json
-{
-  "mcpServers": {
-    "agentMemoryBridge": {
-      "type": "stdio",
-      "command": "/path/to/agent-memory-bridge/.amb-venv/bin/python",
-      "args": ["-m", "agent_mem_bridge"],
-      "cwd": "/path/to/agent-memory-bridge",
-      "env": {
-        "AGENT_MEMORY_BRIDGE_HOME": "/path/to/bridge-home",
-        "AGENT_MEMORY_BRIDGE_CONFIG": "/path/to/agent-memory-bridge-config.toml",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT": "claude-desktop",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
-```
-
-## Cursor
-
-Status: `Documented`
-
-[Cursor's MCP docs](https://docs.cursor.com/en/tools/mcp)
-describe project or user JSON config with `mcpServers` entries. This repository
-does not claim an **Add to Cursor** listing; use the JSON path below.
-
-```json
-{
-  "mcpServers": {
-    "agentMemoryBridge": {
-      "type": "stdio",
-      "command": "/path/to/agent-memory-bridge/.amb-venv/bin/python",
-      "args": ["-m", "agent_mem_bridge"],
-      "cwd": "/path/to/agent-memory-bridge",
-      "env": {
-        "AGENT_MEMORY_BRIDGE_HOME": "/path/to/bridge-home",
-        "AGENT_MEMORY_BRIDGE_CONFIG": "/path/to/agent-memory-bridge-config.toml",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT": "cursor",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
-```
-
-## Cline
-
-Status: `Documented`
-
-[Cline's MCP docs](https://docs.cline.bot/mcp/mcp-overview) use JSON
-`mcpServers` entries for local stdio servers and expose an MCP configuration UI
-and `cline mcp` wizard. An agent-led GitHub install should follow
-[`llms-install.md`](../llms-install.md), then add the derived interpreter and
-arguments below through Cline's approved config flow.
-
-```json
-{
-  "mcpServers": {
-    "agentMemoryBridge": {
-      "command": "/path/to/agent-memory-bridge/.amb-venv/bin/python",
-      "args": ["-m", "agent_mem_bridge"],
-      "cwd": "/path/to/agent-memory-bridge",
-      "env": {
-        "AGENT_MEMORY_BRIDGE_HOME": "/path/to/bridge-home",
-        "AGENT_MEMORY_BRIDGE_CONFIG": "/path/to/agent-memory-bridge-config.toml",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT": "cline",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
-```
-
-## Antigravity
-
-Status: `Locally tested`
-
-Antigravity has a raw MCP config view with `mcpServers`, and AMB shared-memory
-writes were dogfooded locally through that path. The exact file path can vary by
-app install, so document the JSON shape rather than promising one hard-coded
-location.
-
-```json
-{
-  "mcpServers": {
-    "agentMemoryBridge": {
-      "command": "/path/to/agent-memory-bridge/.amb-venv/bin/python",
-      "args": ["-m", "agent_mem_bridge"],
-      "cwd": "/path/to/agent-memory-bridge",
-      "env": {
-        "AGENT_MEMORY_BRIDGE_HOME": "/path/to/bridge-home",
-        "AGENT_MEMORY_BRIDGE_CONFIG": "/path/to/agent-memory-bridge-config.toml",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT": "antigravity",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
-```
-
-## OpenCode
-
-Status: `Locally tested`
-
-[OpenCode's current MCP docs](https://opencode.ai/docs/mcp-servers/) define
-local servers under `mcp`, with a command array and an `environment` object.
-Use `opencode mcp add` for the guided flow or merge the generated shape into the
-intended user or project config:
+To inspect an existing binding without writing or rebinding:
 
 ```bash
-<venv-python> -m agent_mem_bridge first-run --namespace project:my-app --query "What should I check before submitting changes?"
-<venv-python> -m agent_mem_bridge config --client opencode --example
+<venv-python> -m agent_mem_bridge project resolve .
 ```
+
+## Generic Lifecycle-Hook Input
+
+AMB provides an optional lifecycle hook for hosts that wish to invoke memory recall or review candidate capture directly. It does not ship client-specific plugins or hook manifests. The host invokes the generic hook command:
+
+```bash
+<venv-python> -m agent_mem_bridge lifecycle-hook
+```
+
+The hook reads one generic JSON event on standard input:
 
 ```json
 {
-  "mcp": {
-    "agentMemoryBridge": {
-      "type": "local",
-      "command": [
-        "/path/to/agent-memory-bridge/.amb-venv/bin/python",
-        "-m",
-        "agent_mem_bridge"
-      ],
-      "enabled": true,
-      "environment": {
-        "AGENT_MEMORY_BRIDGE_HOME": "/path/to/bridge-home",
-        "AGENT_MEMORY_BRIDGE_CONFIG": "/path/to/agent-memory-bridge-config.toml",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT": "opencode",
-        "AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT": "stdio"
-      }
-    }
-  }
+  "kind": "task_prompt",
+  "cwd": "/path/to/project",
+  "session_id": "session-123",
+  "prompt": "How do we run tests in this repo?"
 }
 ```
 
-## Optional host lifecycle activation
+Accepted `kind` values are `session_start`, `task_prompt`, `compaction`, `ignore`, and `capture`. A normal session start resolves the bound project without dumping memory; `session_start` with `source="compact"`, and `compaction`, maintain continuity without recall. A material task prompt may recall once; an exact repeated prompt is suppressed.
 
-Status: `adapter contract tested; live host trial not claimed`
+`capture` may store one hidden `needs_review` candidate when `visible_artifact` is already a valid `memory.visible_artifact.v1` object and both `session_id` and `turn_id` are provided. It does not read transcripts or automatically promote candidates.
 
-AMB remains usable as a plain MCP server without this adapter. The optional
-lifecycle adapter is a host hook around the same recall behavior. It is not
-installed by pasting instructions into a project instruction file, and loading
-that file is not proof that activation ran.
+Historical write-side capture checks from the v0.35 line are documented in historical reports; they do not establish external client acceptance of the current generic hook input.
 
-The shared entrypoint reads one JSON event on standard input:
+## Server Verification
 
-```bash
-python3 -m agent_mem_bridge lifecycle-hook
-```
-
-On Windows, use `py -3 -m agent_mem_bridge lifecycle-hook`.
-Use the same interpreter that has the package installed, and replace `python3`
-or `py -3` in the hook command when the default interpreter does not.
-
-Codex can call that entrypoint from `adapters/codex/hooks/hooks.json` on session
-start, prompt submission, compaction, and turn stop. Review and trust the hook
-before Codex runs it. The Codex command timeout is 10 seconds. Session start
-resolves the bound project and does not dump memory. A material task may recall
-once. A typo or a merely optional design alternative does not. An exact repeat
-of that same prompt does not recall again. A reworded question can still recall;
-this adapter does not yet judge that two prompts are the same material need.
-
-Codex `Stop` is the only capture connection. It may store one hidden
-`needs_review` candidate when `last_assistant_message` is already one
-`memory.visible_artifact.v1` object. It does not read `transcript_path`,
-summarize the turn, or promote the candidate. `PreCompact` stays continuity-only
-for that reason. A missing project binding, a remote authority, or an ordinary
-assistant message produces no candidate.
-
-The [write-side capture check](WRITE-SIDE-CAPTURE.md#live-host-check) passed
-Codex Stop positive and negative lanes with invocation-inline hooks on CLI
-0.157.1. This does not establish plugin/project-file discovery or read-side
-activation acceptance.
-
-The OpenCode plugin at `adapters/opencode/amb-lifecycle.js` uses the same
-entrypoint for session start and compaction. `session.created` reads
-`properties.info.id`. The plugin kills the child if it is still running after
-10 seconds and then continues without injected context. Prompt-level activation
-on that host is a pending lane until it has a prompt hook that is not per-token.
-Do not bind a message-updated event for this purpose.
-
-The adapter reads project scope through the governed project resolver. It does
-not create a namespace, rebind a project, or accept a caller-supplied namespace
-as authority. It does not add an MCP tool or store prompts, transcripts, or
-hidden reasoning. Ordinary durable memory is not written by recall. The only
-write is the hidden Codex Stop candidate described above, and only for a local
-authority. Activation evidence is a derived local decision log.
-
-Recall uses the selected authority. Set
-`AGENT_MEMORY_BRIDGE_AUTHORITY_URL`, or `[deployment].authority_url` in the
-bridge config, when the canonical authority is a remote Streamable HTTP server.
-The hook then calls the existing MCP `recall` tool over HTTP, with the locally
-resolved namespace and a three-record limit. It never opens a local database or
-falls back to one. Set `AGENT_MEMORY_BRIDGE_HTTP_TOKEN_FILE` to a private bearer
-token file when authentication is required. Protect traffic with TLS or a tunnel.
-The HTTP operation has a five-second deadline and does not retry recall.
-Transport, authentication, tool and malformed-result failures produce `error`,
-not `no_hit`; the host continues without recalled memory. Skipped events make
-no network calls and remote availability remains `unknown` until a recall.
-Without a remote URL the existing local path is unchanged; a missing local
-database is `unknown`. Repository tests are not live Codex host acceptance.
-
-## Hermes
-
-Status: `Locally tested`
-
-[Hermes's current MCP docs](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp)
-use `mcp_servers` in `~/.hermes/config.yaml` for local stdio servers. AMH/Hermes
-adapter commands remain a manual helper workflow; AMB itself remains a separate
-MCP store.
-
-```bash
-<venv-python> -m agent_mem_bridge first-run --namespace project:my-app --query "What should I check before submitting changes?"
-<venv-python> -m agent_mem_bridge config --client hermes --example
-```
-
-```yaml
-mcp_servers:
-  agentMemoryBridge:
-    command: '/path/to/agent-memory-bridge/.amb-venv/bin/python'
-    args:
-      - '-m'
-      - 'agent_mem_bridge'
-    env:
-      AGENT_MEMORY_BRIDGE_HOME: '/path/to/bridge-home'
-      AGENT_MEMORY_BRIDGE_CONFIG: '/path/to/agent-memory-bridge-config.toml'
-      AGENT_MEMORY_BRIDGE_DEFAULT_SOURCE_CLIENT: 'hermes'
-      AGENT_MEMORY_BRIDGE_DEFAULT_CLIENT_TRANSPORT: 'stdio'
-```
-
-After editing the config, run `hermes mcp test agentMemoryBridge` and
-`hermes mcp list`, or reload MCP servers from Hermes and inspect the connection
-status.
-
-## Verify Before You Trust It
-
-After adding the config, run:
+Verify server installation and stdio execution with:
 
 ```bash
 <venv-python> -m agent_mem_bridge doctor
 <venv-python> -m agent_mem_bridge verify
 ```
 
-`doctor` explains install problems without touching your live bridge state.
-`verify` launches an isolated temp runtime and proves that the local stdio path
-actually works. It does not prove that a client loaded the configuration.
-`doctor` checks local prerequisites and resolved paths. Restart or reload the
-client and inspect its MCP status/tool visibility; that client registration gate
-proves the configuration was loaded.
-
-## What This Guide Does Not Claim
-
-This page is intentionally narrower than a broad MCP ecosystem survey.
-
-It does not claim:
-
-- packaged desktop extension distribution
-- OAuth support across every client
-- remote HTTP deployment parity
-- that every stdio-capable client has been locally verified
-
-If your client can launch a local stdio server but is not listed above, start
-from the generic shape first and treat it as `Supported`, not automatically
-`Verified`.
-
-
-## P5 session evidence
-
-The V0.30 source line has session-level evidence in both DeepSeek Harness and OpenCode using official deterministic/mock model infrastructure. DSH and OpenCode are marked **SESSION VERIFIED** for the captured versions; **MODEL VERIFIED = No**. This is evidence of the tested local MCP workflows, not a general provider compatibility claim, host endorsement, productivity result, or certification of every client version.
+`doctor` checks local prerequisites, dependencies, and configured paths. `verify` launches an isolated temporary runtime to confirm that the local stdio MCP server functions correctly. These commands verify the server itself; they do not prove that an external client loaded configuration or registered the server. Client registration is proven only when the coding client itself connects and exposes AMB's 17 public MCP tools.

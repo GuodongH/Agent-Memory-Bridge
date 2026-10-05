@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 import re
 import tomllib
 from pathlib import Path
 from typing import Any
 
-from .client_config import render_example_client_configs
 from .first_run import PINNED_INSTALL_VERSION, RELEASE_INSTALL_GATE_NOTE
 
 PUBLIC_ONBOARDING_FILES = (
@@ -51,9 +49,7 @@ def run_onboarding_contract_check(root: Path) -> dict[str, Any]:
     checks = [
         _required_docs_check(project_root),
         _readme_links_check(project_root),
-        _example_configs_check(),
         _onboarding_docs_leak_check(project_root),
-        _safe_setup_apply_contract_check(project_root),
         _first_use_memory_loop_contract_check(project_root),
         _versioned_install_tool_surface_check(project_root),
     ]
@@ -90,56 +86,6 @@ def _readme_links_check(project_root: Path) -> dict[str, Any]:
     }
 
 
-def _example_configs_check() -> dict[str, Any]:
-    failures: list[dict[str, Any]] = []
-    for rendered in render_example_client_configs():
-        try:
-            if rendered.format == "json":
-                json.loads(rendered.content)
-            elif rendered.format == "toml":
-                tomllib.loads(rendered.content)
-            elif rendered.format == "yaml":
-                _validate_yaml_like_mcp_config(rendered.content)
-            else:
-                raise ValueError(f"Unsupported rendered config format: {rendered.format}")
-        except (json.JSONDecodeError, tomllib.TOMLDecodeError, ValueError) as exc:
-            failures.append(
-                {
-                    "client": rendered.client,
-                    "format": rendered.format,
-                    "error": str(exc),
-                }
-            )
-        for pattern, reason in BLOCKED_PATTERNS:
-            if pattern.search(rendered.content):
-                failures.append(
-                    {
-                        "client": rendered.client,
-                        "format": rendered.format,
-                        "error": reason,
-                        "pattern": pattern.pattern,
-                    }
-                )
-    return {
-        "name": "generated_example_configs_parse_and_stay_sanitized",
-        "ok": not failures,
-        "failures": failures,
-    }
-
-
-def _validate_yaml_like_mcp_config(content: str) -> None:
-    required_lines = (
-        "mcp_servers:",
-        "  agentMemoryBridge:",
-        "    command:",
-        "    args:",
-        "    env:",
-    )
-    for line in required_lines:
-        if line not in content:
-            raise ValueError(f"Missing YAML config line: {line}")
-
-
 def _onboarding_docs_leak_check(project_root: Path) -> dict[str, Any]:
     violations: list[dict[str, Any]] = []
     for relative_path in PUBLIC_ONBOARDING_FILES:
@@ -164,40 +110,6 @@ def _onboarding_docs_leak_check(project_root: Path) -> dict[str, Any]:
     }
 
 
-def _safe_setup_apply_contract_check(project_root: Path) -> dict[str, Any]:
-    install_path = project_root / "INSTALL_FOR_AGENTS.md"
-    cli_path = project_root / "src" / "agent_mem_bridge" / "cli.py"
-    if not install_path.exists() or not cli_path.exists():
-        return {
-            "name": "safe_setup_apply_contract_is_explicit",
-            "ok": False,
-            "missing": [str(path) for path in (install_path, cli_path) if not path.exists()],
-        }
-    install_text = install_path.read_text(encoding="utf-8")
-    cli_text = cli_path.read_text(encoding="utf-8")
-    required_install_terms = (
-        "Changes written: 0",
-        "setup --apply",
-        "setup --apply --yes --json",
-        "setup --rollback",
-        "There is no `--force` switch.",
-        "manual-review plans are\nnever overwritten",
-    )
-    required_cli_terms = (
-        'setup_parser.add_argument(\n        "--apply"',
-        'setup_parser.add_argument(\n        "--yes"',
-        'setup_parser.add_argument(\n        "--rollback"',
-        "if namespace.yes and not namespace.apply:",
-    )
-    missing = [term for term in required_install_terms if term not in install_text]
-    missing.extend(f"cli:{term}" for term in required_cli_terms if term not in cli_text)
-    return {
-        "name": "safe_setup_apply_contract_is_explicit",
-        "ok": not missing,
-        "missing": missing,
-    }
-
-
 def _first_use_memory_loop_contract_check(project_root: Path) -> dict[str, Any]:
     install_path = project_root / "INSTALL_FOR_AGENTS.md"
     first_run_path = project_root / "src" / "agent_mem_bridge" / "first_run.py"
@@ -210,7 +122,6 @@ def _first_use_memory_loop_contract_check(project_root: Path) -> dict[str, Any]:
     install_text = install_path.read_text(encoding="utf-8")
     first_run_text = first_run_path.read_text(encoding="utf-8")
     required_install_terms = (
-        "`setup` owns safe client connection.",
         "`first-run` as a product guide that is read-only with respect to user memory and client configuration",
         "existing `store` tool",
         "existing `feedback` tool",

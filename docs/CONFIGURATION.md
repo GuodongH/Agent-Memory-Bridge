@@ -2,7 +2,7 @@
 
 Copy [config.example.toml](../config.example.toml) to a local path you control,
 then edit only the sections you actually need. Basic bridge usage does not require
-watchers, profile imports, telemetry, or classifier assistance.
+profile imports, telemetry, or classifier assistance.
 
 A clean starting point is:
 
@@ -318,35 +318,20 @@ Use this when you want the sidecar to be ready before task-time recall, then kee
 using `index-health --strict-embeddings` and benchmarks to decide whether
 `hybrid` is good enough for your corpus.
 
-## `[watcher]` and `[service]`
+## `[service]`
 
 Optional background automation.
 
-- `[watcher]` controls local rollout and session-file capture helpers
-- `[service]` controls the lightweight polling wrapper around watcher, reflex,
-  consolidation, governance-trigger, and embedding-sidecar checks
+- `[service]` controls the lightweight polling wrapper around the four core service lanes:
+  `reflex`, `consolidation`, `governance`, and `embeddings`
 
-These helpers are not required for basic MCP usage. The current watcher workflow is
-best developed around Codex-style rollout files, but the bridge itself does not
-depend on Codex.
+AMB Core no longer includes a Codex watcher lane. Background automation is limited to the four service lanes above:
+- `reflex`: first-pass summary-to-learn/gotcha promotion
+- `consolidation`: stronger belief-candidate compression
+- `governance`: review-trigger scanning over hidden learning candidates
+- `embeddings`: periodic embedding sidecar maintenance
 
-Keep `watcher.enabled = false` for normal multi-runtime service use unless you
-explicitly want Codex rollout-log checkpoints. AMB-native learning candidates,
-signals, governance triggers, and embedding maintenance do not require the
-watcher.
-
-When enabled, the watcher records metadata-only rollout lifecycle rows in the
-explicit run ledger by default. It does not store rollout message bodies, create
-session notes, or create normal memory rows. `watcher.legacy_memory_mode = true`
-is a temporary compatibility switch that restores the earlier auto-summary
-memory and note workflow for operators who deliberately need it.
-
-Watcher state is a local cache, not episode authority. Switching to episode mode
-safely replays or migrates older watcher entries through ledger idempotency; the
-metadata-only no-rollout-path boundary is scoped to run tables rather than local
-watcher state.
-
-The service holds `bridge-home/service.lock` for the lifetime of the process.
+These service lanes are not required for basic MCP usage. The service holds `bridge-home/service.lock` for the lifetime of the process.
 The file contains operator metadata, while the OS-level lock is the actual
 ownership boundary; a leftover unlocked metadata file does not block restart.
 `agent-memory-bridge service --once` returns `1` when an enabled lane fails and
@@ -400,7 +385,7 @@ trigger_state_path = "governance-trigger-state.json"
 trigger_scan_limit = 100
 ```
 
-This is separate from Codex session-log watching. Any MCP-compatible client or
+Any MCP-compatible client or
 runtime can participate by writing policy-gated learning candidates into AMB.
 The governance trigger then opens review signals for candidates that need human
 or operator attention. It does not approve, promote, rewrite, or delete memory.
@@ -482,7 +467,6 @@ section alone if you only want the basic bridge runtime.
 | `AGENT_MEMORY_BRIDGE_EMBEDDING_DIM` | expected embedding vector dimension |
 | `AGENT_MEMORY_BRIDGE_EMBEDDING_TIMEOUT_SECONDS` | timeout for each embedding command call |
 | `AGENT_MEMORY_BRIDGE_EMBEDDING_SCHEDULER_ENABLED` | enable periodic embedding sidecar maintenance in `service` |
-| `AGENT_MEMORY_BRIDGE_WATCHER_ENABLED` | enable Codex-style rollout/session-file capture in `service`; default is false |
 | `AGENT_MEMORY_BRIDGE_REFLEX_ENABLED` | enable summary-to-learn/gotcha reflex promotion in `service`; default is false |
 | `AGENT_MEMORY_BRIDGE_CONSOLIDATION_ENABLED` | enable strong consolidation in `service`; default is false |
 | `AGENT_MEMORY_BRIDGE_CONSOLIDATION_ALLOW_REFLEX_SOURCES` | allow automatic reflex learn/gotcha rows to feed stronger consolidation; default is false |

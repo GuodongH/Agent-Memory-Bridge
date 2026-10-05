@@ -4,9 +4,8 @@ The adapter consumes the governed project resolver, applies the bounded
 activation policy, and makes at most one recall. It does not create bindings,
 read transcripts, or accept caller-declared scope.
 
-Codex Stop is the only write path. It may store one hidden review candidate
-when that hook already carries one structured visible artifact. It does not
-summarize prose, and it does not promote the candidate into ordinary memory.
+Capture may store one hidden review candidate from a structured visible artifact.
+It does not summarize prose, and it does not promote the candidate into ordinary memory.
 """
 
 from __future__ import annotations
@@ -65,7 +64,7 @@ _EVIDENCE_FIELDS = (
     "policy_source",
     "adapter_loaded",
     "host",
-    "hook_event_name",
+    "kind",
     "session_id",
     "policy_action",
     "decision",
@@ -92,7 +91,7 @@ _EVIDENCE_FIELDS = (
 @dataclass(frozen=True)
 class ActivationObservation:
     host: str
-    hook_event_name: str
+    kind: str
     session_id: str
     policy_action: str
     decision: str
@@ -122,7 +121,7 @@ class ActivationObservation:
             "policy_source": POLICY_SOURCE,
             "adapter_loaded": True,
             "host": self.host,
-            "hook_event_name": self.hook_event_name,
+            "kind": self.kind,
             "session_id": self.session_id,
             "policy_action": self.policy_action,
             "decision": self.decision,
@@ -150,51 +149,17 @@ class ActivationObservation:
         return record
 
 
-def codex_hooks_document() -> dict[str, Any]:
-    """Return the optional Codex hook document. It is not installed automatically."""
-
-    handler = {
-        "type": "command",
-        "command": "python3 -m agent_mem_bridge lifecycle-hook",
-        "commandWindows": "py -3 -m agent_mem_bridge lifecycle-hook",
-        "timeout": 10,
-        "additionalContextLimit": 1200,
-    }
-    return {
-        "description": (
-            "Optional AMB lifecycle activation. Success is a hook decision, not an AGENTS.md export. "
-            "Codex Stop may store one hidden review candidate from an already structured visible artifact."
-        ),
-        "hooks": {
-            "SessionStart": [
-                {
-                    "matcher": "startup|resume|clear|compact",
-                    "hooks": [handler],
-                }
-            ],
-            "UserPromptSubmit": [{"hooks": [handler]}],
-            "PreCompact": [
-                {
-                    "matcher": "manual|auto",
-                    "hooks": [handler],
-                }
-            ],
-            "Stop": [{"hooks": [handler]}],
-        },
-    }
-
-
 def activation_evidence_path() -> Path:
     return resolve_bridge_home() / "lifecycle" / "activation-evidence.jsonl"
 
 
 def run_hook_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Evaluate one host event and append derived evidence. Always returns hook JSON."""
+    """Evaluate one lifecycle event and append derived evidence."""
 
     observation = activate(payload)
     _append_evidence(observation)
-    if observation.host == "codex" and observation.hook_event_name == "Stop":
-        capture = _capture_codex_stop(payload, observation)
+    if observation.kind == "capture":
+        capture = _capture_lifecycle(payload, observation)
         path = resolve_bridge_home() / "lifecycle" / "capture-evidence.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
@@ -203,8 +168,26 @@ def run_hook_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def activate(payload: Mapping[str, Any]) -> ActivationObservation:
-    hook_event_name = _text(payload.get("hook_event_name") or payload.get("event"))
-    host = _host(payload, hook_event_name)
+    host = "core"
+    vendor_keys = frozenset(
+        {
+            "hook_event_name",
+            "event",
+            "host",
+            "last_assistant_message",
+            "transcript_path",
+            "hookSpecificOutput",
+        }
+    )
+    if any(key in payload for key in vendor_keys):
+        kind = "ignore"
+    else:
+        raw_kind = _text(payload.get("kind"))
+        if raw_kind in {"session_start", "task_prompt", "compaction", "ignore", "capture"}:
+            kind = raw_kind
+        else:
+            kind = "ignore"
+
     session_id = _bounded(_text(payload.get("session_id")), 200)
     provenance = {
         name: _text(payload.get(name))
@@ -215,13 +198,12 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
     ignored_caller_scope = bool(scope["ignored_caller_scope"])
     prompt = _text(payload.get("prompt"))[:_PROMPT_LIMIT]
     fingerprint = _fingerprint(prompt) if prompt else ""
-    kind = _event_kind(hook_event_name)
     evidence_path = activation_evidence_path()
     prior_lines = _read_evidence(evidence_path)
 
     policy_action = "skip"
     rule_id = "unsupported-event"
-    decision = "skip"
+    decision = "ignore" if kind == "ignore" else "skip"
     recall_requested = False
     repeat_suppressed = False
     context = ""
@@ -239,8 +221,7 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
         policy_action = "continuity"
         decision = "continuity"
         rule_id = "compaction-continuity"
-        if host == "opencode":
-            context = _continuity_context(scope, _latest(prior_lines, session_id, scope["repository_id"]))
+        context = _continuity_context(scope, _latest(prior_lines, session_id, scope["repository_id"]))
     elif kind == "task_prompt":
         policy_action, rule_id = classify_task_need(prompt)
         decision = policy_action
@@ -250,6 +231,14 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
             repeat_suppressed = True
             decision = "skip"
             rule_id = "exact-prompt-repeat"
+    elif kind == "capture":
+        policy_action = "skip"
+        rule_id = "visible-artifact-capture"
+        decision = "skip"
+    elif kind == "ignore":
+        policy_action = "skip"
+        rule_id = "unsupported-event"
+        decision = "ignore"
 
     authority = resolve_activation_authority()
     availability = str(authority["availability"])
@@ -323,7 +312,7 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
 
     return ActivationObservation(
         host=host,
-        hook_event_name=hook_event_name,
+        kind=kind,
         session_id=session_id,
         policy_action=policy_action,
         decision=decision,
@@ -348,24 +337,21 @@ def activate(payload: Mapping[str, Any]) -> ActivationObservation:
     )
 
 
-_STOP_ARTIFACT_LIMIT = 4000
+_CAPTURE_ARTIFACT_LIMIT = 4000
 _VISIBLE_ARTIFACT_SCHEMA = "memory.visible_artifact.v1"
 _PROVENANCE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
 
 
-def _capture_codex_stop(payload: Mapping[str, Any], observation: ActivationObservation) -> dict[str, Any]:
-    """Store one hidden candidate from a Codex Stop artifact, or leave the lane untouched.
+def _capture_lifecycle(payload: Mapping[str, Any], observation: ActivationObservation) -> dict[str, Any]:
+    """Store one hidden candidate from a lifecycle capture artifact, or leave the lane untouched."""
 
-    PreCompact is intentionally not handled here. That event exposes an unstable
-    transcript path, not a bounded visible artifact, and this function never reads it.
-    """
-
+    session_id = _provenance_token(_text(payload.get("session_id")), "session")
+    turn_id = _provenance_token(_text(payload.get("turn_id")), "turn")
     receipt: dict[str, Any] = {
-        "schema": "amb.codex-stop-capture-evidence.v1",
+        "schema": "amb.lifecycle-capture-evidence.v1",
         "recorded_at": datetime.now(UTC).isoformat(),
-        "hook_event_name": "Stop",
-        "session_id": _provenance_token(_text(payload.get("session_id")), "session"),
-        "turn_id": _provenance_token(_text(payload.get("turn_id")), "turn"),
+        "session_id": session_id,
+        "turn_id": turn_id,
         "disposition": "no_capture",
         "reason": "no_bounded_artifact",
         "writes": 0,
@@ -376,7 +362,7 @@ def _capture_codex_stop(payload: Mapping[str, Any], observation: ActivationObser
         return {**receipt, "reason": "unbound_or_ambiguous_scope"}
     if observation.authority_mode != "local" or observation.availability != "available":
         return {**receipt, "reason": "local_authority_not_selected"}
-    event = _codex_stop_capture_event(payload, namespace=observation.namespace)
+    event = _lifecycle_capture_event(payload, namespace=observation.namespace, session_id=session_id, turn_id=turn_id)
     if event is None:
         return receipt
     from .storage import MemoryStore
@@ -397,6 +383,12 @@ def _capture_codex_stop(payload: Mapping[str, Any], observation: ActivationObser
     finally:
         # Windows cannot delete the database until SQLite connections are collected.
         gc.collect()
+
+    visible_artifact = payload.get("visible_artifact")
+    assert isinstance(visible_artifact, dict)
+    digest = hashlib.sha256(
+        json.dumps(visible_artifact, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
     return {
         **receipt,
         "disposition": result["disposition"],
@@ -404,52 +396,49 @@ def _capture_codex_stop(payload: Mapping[str, Any], observation: ActivationObser
         "writes": result["writes"],
         "automatic_promotion": result["automatic_promotion"],
         "record_ids": [item["record_id"] for item in result["items"] if item.get("record_id")],
-        "artifact_sha256": hashlib.sha256(payload["last_assistant_message"].encode("utf-8")).hexdigest(),
+        "artifact_sha256": digest,
     }
 
 
-def _codex_stop_capture_event(payload: Mapping[str, Any], *, namespace: str) -> dict[str, Any] | None:
-    artifact = _codex_stop_visible_artifact(payload)
+def _lifecycle_capture_event(
+    payload: Mapping[str, Any],
+    *,
+    namespace: str,
+    session_id: str | None,
+    turn_id: str | None,
+) -> dict[str, Any] | None:
+    if session_id is None or turn_id is None:
+        return None
+    artifact = _lifecycle_visible_artifact(payload)
     if artifact is None:
         return None
-    session_id = _provenance_token(_text(payload.get("session_id")), "session")
-    task_id = _provenance_token(_text(payload.get("turn_id")), "turn")
-    if session_id is None or task_id is None:
-        return None
-    # Host-owned reference binds the claim to the exact visible message, not a
-    # caller-invented evidence location. Session and turn are stored separately.
-    digest = hashlib.sha256(payload["last_assistant_message"].encode("utf-8")).hexdigest()
-    artifact["evidence_refs"] = [f"codex-stop:sha256:{digest}"]
+    digest = hashlib.sha256(json.dumps(artifact, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    artifact_copy = {str(k): v for k, v in artifact.items()}
+    artifact_copy["evidence_refs"] = [f"lifecycle:sha256:{digest}"]
     return {
         "schema": "memory.lifecycle_capture_event.v1",
         "boundary": "post_run",
         "namespace": namespace,
-        "source_runtime": "codex",
+        "source_runtime": "lifecycle",
         "source_session_id": session_id,
-        "source_task_id": task_id,
-        "visible_artifacts": [artifact],
+        "source_task_id": turn_id,
+        "visible_artifacts": [artifact_copy],
     }
 
 
-def _codex_stop_visible_artifact(payload: Mapping[str, Any]) -> dict[str, Any] | None:
-    message = payload.get("last_assistant_message")
-    if not isinstance(message, str) or len(message) > _STOP_ARTIFACT_LIMIT:
+def _lifecycle_visible_artifact(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    artifact = payload.get("visible_artifact")
+    if not isinstance(artifact, dict):
+        return None
+    if _text(artifact.get("schema")) != _VISIBLE_ARTIFACT_SCHEMA:
         return None
     try:
-        if len(message.encode("utf-8")) > _STOP_ARTIFACT_LIMIT:
+        encoded = json.dumps(artifact, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        if len(encoded) > _CAPTURE_ARTIFACT_LIMIT:
             return None
-    except UnicodeEncodeError:
+    except (TypeError, ValueError):
         return None
-    stripped = message.strip()
-    if len(stripped) < 2 or not stripped.startswith("{") or not stripped.endswith("}"):
-        return None
-    try:
-        parsed = json.loads(stripped)
-    except (json.JSONDecodeError, RecursionError):
-        return None
-    if not isinstance(parsed, dict) or _text(parsed.get("schema")) != _VISIBLE_ARTIFACT_SCHEMA:
-        return None
-    return {str(key): value for key, value in parsed.items()}
+    return {str(key): value for key, value in artifact.items()}
 
 
 def _provenance_token(value: str, prefix: str) -> str | None:
@@ -487,20 +476,8 @@ def resolve_project_scope(cwd: str, provenance: Mapping[str, Any] | None = None)
     }
 
 
-def render_hook_response(payload: Mapping[str, Any], observation: ActivationObservation) -> dict[str, Any]:
-    context = observation.context.strip()
-    if not context:
-        return {"continue": True}
-    event = _text(payload.get("hook_event_name") or payload.get("event"))
-    if event in {"UserPromptSubmit", "SessionStart"} or (event == "PreCompact" and observation.host == "opencode"):
-        return {
-            "continue": True,
-            "hookSpecificOutput": {
-                "hookEventName": event,
-                "additionalContext": context,
-            },
-        }
-    return {"continue": True}
+def render_hook_response(_payload: Mapping[str, Any], observation: ActivationObservation) -> dict[str, Any]:
+    return {"decision": observation.decision, "context": observation.context}
 
 
 def resolve_activation_authority() -> dict[str, Any]:
@@ -718,25 +695,6 @@ def _git_head(root: str) -> str | None:
         return None
     value = result.stdout.strip()
     return value or None
-
-
-def _event_kind(hook_event_name: str) -> str:
-    if hook_event_name == "SessionStart":
-        return "session_start"
-    if hook_event_name == "UserPromptSubmit":
-        return "task_prompt"
-    if hook_event_name in {"PreCompact", "PostCompact"}:
-        return "compaction"
-    return "ignore"
-
-
-def _host(payload: Mapping[str, Any], hook_event_name: str) -> str:
-    host = _text(payload.get("host")).lower()
-    if host in {"codex", "opencode"}:
-        return host
-    if hook_event_name:
-        return "codex"
-    return "generic"
 
 
 def _text(value: object) -> str:

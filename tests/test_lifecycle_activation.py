@@ -21,7 +21,6 @@ from agent_mem_bridge.cli import main
 from agent_mem_bridge.lifecycle_activation import (
     _memory_context,
     activation_evidence_path,
-    codex_hooks_document,
     run_hook_payload,
 )
 from agent_mem_bridge.mcp_boundary import PUBLIC_TOOL_NAMES
@@ -209,14 +208,13 @@ def task_payload(repo: Path, prompt: str, **extra: object) -> dict[str, object]:
     transcript = repo / "transcript.txt"
     transcript.write_text("TRANSCRIPT-SECRET hidden reasoning\n", encoding="utf-8")
     return {
-        "hook_event_name": "UserPromptSubmit",
+        "kind": "task_prompt",
         "session_id": "session-1",
         "cwd": str(repo / "nested dir"),
         "prompt": prompt,
         "namespace": "project:forged",
         "client_workspace": str(repo / "forged workspace"),
         "source_client": "caller",
-        "transcript_path": str(transcript),
         **extra,
     }
 
@@ -235,30 +233,6 @@ def test_public_mcp_surface_does_not_grow() -> None:
     assert "lifecycle-hook" not in PUBLIC_TOOL_NAMES
 
 
-def test_codex_hook_file_matches_cross_platform_entrypoint() -> None:
-    document = json.loads((ROOT / "adapters/codex/hooks/hooks.json").read_text(encoding="utf-8"))
-    assert document == codex_hooks_document()
-    handler = document["hooks"]["UserPromptSubmit"][0]["hooks"][0]
-    assert handler["command"] == "python3 -m agent_mem_bridge lifecycle-hook"
-    assert handler["commandWindows"] == "py -3 -m agent_mem_bridge lifecycle-hook"
-    assert document["hooks"]["Stop"][0]["hooks"] == [handler]
-    assert "matcher" not in document["hooks"]["Stop"][0]
-    assert "AGENTS.md" not in handler["command"]
-    assert "AGENTS.md" not in handler["commandWindows"]
-
-
-def test_opencode_plugin_uses_same_entrypoint_and_pending_prompt_lane() -> None:
-    source = (ROOT / "adapters/opencode/amb-lifecycle.js").read_text(encoding="utf-8")
-    assert "lifecycle-hook" in source
-    assert "session.created" in source
-    assert "experimental.session.compacting" in source
-    assert "properties.info" in source or "info.id" in source
-    assert "HOOK_TIMEOUT_MS = 10000" in source
-    assert '"message.updated"' not in source
-    assert "JSON.stringify(event" not in source
-    assert "pending lane" in source
-
-
 def test_session_start_resolves_binding_without_recall_or_dump(tmp_path: Path, monkeypatch) -> None:
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
     remember(home, "project:fixture", MEMORY)
@@ -268,7 +242,7 @@ def test_session_start_resolves_binding_without_recall_or_dump(tmp_path: Path, m
     before = memory_count(home)
     response = run_hook_payload(
         {
-            "hook_event_name": "SessionStart",
+            "kind": "session_start",
             "source": "startup",
             "session_id": "session-1",
             "cwd": str(repo / "nested dir"),
@@ -278,7 +252,7 @@ def test_session_start_resolves_binding_without_recall_or_dump(tmp_path: Path, m
         }
     )
     row = evidence_rows(home)[-1]
-    assert response == {"continue": True}
+    assert response == {"decision": "skip", "context": ""}
     assert row["resolution_status"] == "bound"
     assert row["namespace"] == "project:fixture"
     assert row["ignored_caller_scope"] is True
@@ -286,6 +260,8 @@ def test_session_start_resolves_binding_without_recall_or_dump(tmp_path: Path, m
     assert row["rule_id"] == "session-entry-no-dump"
     assert row["recall_invoked"] is False
     assert row["adapter_loaded"] is True
+    assert row["host"] == "core"
+    assert row["kind"] == "session_start"
     assert memory_count(home) == before
     assert (home / "repository" / "bindings.json").read_bytes() == bindings
     assert tree_bytes(home / "logs") == logs
@@ -303,8 +279,8 @@ def test_negative_controls_do_not_recall(tmp_path: Path, monkeypatch) -> None:
         )
     )
     rows = evidence_rows(home)
-    assert typo == {"continue": True}
-    assert optional == {"continue": True}
+    assert typo == {"decision": "skip", "context": ""}
+    assert optional == {"decision": "skip", "context": ""}
     assert rows[-2]["rule_id"] == "not-for-deterministic-edit"
     assert rows[-1]["rule_id"] == "large-design-choice"
     assert all(row["recall_invoked"] is False for row in rows)
@@ -322,16 +298,16 @@ def test_material_recall_distinguishes_hit_no_hit_irrelevant_and_repeat(tmp_path
     changed = run_hook_payload(
         task_payload(repo, MATERIAL + " The governance migration also changed.", session_id="session-1")
     )
-    assert "Untrusted governed context" in changed["hookSpecificOutput"]["additionalContext"]
+    assert "Untrusted governed context" in changed["context"]
     hit_row, repeat_row, changed_row = evidence_rows(home)[-3:]
     assert hit_row["recall_invoked"] is True
     assert hit_row["recall_state"] == "hit"
     assert hit_row["namespace"] == "project:fixture"
-    assert "Untrusted governed context" in hit["hookSpecificOutput"]["additionalContext"]
-    assert "PROMPT-SECRET-991" not in hit["hookSpecificOutput"]["additionalContext"]
+    assert "Untrusted governed context" in hit["context"]
+    assert "PROMPT-SECRET-991" not in hit["context"]
     assert repeat_row["repeat_suppressed"] is True
     assert repeat_row["recall_invoked"] is False
-    assert repeated == {"continue": True}
+    assert repeated == {"decision": "skip", "context": ""}
     assert changed_row["recall_invoked"] is True
     assert memory_count(home) == before
     assert_no_private_text(home, hit)
@@ -345,7 +321,7 @@ def test_material_recall_distinguishes_hit_no_hit_irrelevant_and_repeat(tmp_path
     no_hit_row = evidence_rows(empty_home)[-1]
     assert no_hit_row["recall_state"] == "no_hit"
     assert no_hit_row["recall_invoked"] is True
-    assert "not an unavailable bridge" in no_hit["hookSpecificOutput"]["additionalContext"]
+    assert "not an unavailable bridge" in no_hit["context"]
 
     unrelated_home = isolate(tmp_path / "unrelated", monkeypatch)
     unrelated_repo = make_repo(tmp_path / "unrelated-repo")
@@ -360,15 +336,15 @@ def test_material_recall_distinguishes_hit_no_hit_irrelevant_and_repeat(tmp_path
     irrelevant = run_hook_payload(task_payload(unrelated_repo, MATERIAL, session_id="unrelated-session"))
     irrelevant_row = evidence_rows(unrelated_home)[-1]
     assert irrelevant_row["recall_state"] == "irrelevant_hit"
-    assert "banana" not in irrelevant["hookSpecificOutput"]["additionalContext"].lower()
-    assert "not an unavailable bridge" in irrelevant["hookSpecificOutput"]["additionalContext"]
+    assert "banana" not in irrelevant["context"].lower()
+    assert "not an unavailable bridge" in irrelevant["context"]
 
 
 def test_missing_local_database_is_not_reported_as_amb_unavailable(tmp_path: Path, monkeypatch) -> None:
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
     response = run_hook_payload(task_payload(repo, MATERIAL))
     row = evidence_rows(home)[-1]
-    context = response["hookSpecificOutput"]["additionalContext"]
+    context = response["context"]
     assert row["authority_mode"] == "unknown"
     assert row["availability"] == "unknown"
     assert row["recall_state"] == "skipped"
@@ -478,7 +454,7 @@ def test_remote_authority_does_not_open_a_stale_local_database(
         assert transport_attempts == []
         assert "CONFLICTING-LOCAL-TRAP" not in json.dumps(response)
         assert url not in evidence_text(home)
-        assert response["continue"] is True
+        assert set(response) == {"decision", "context"}
         if scenario == "unavailable":
             assert row["availability"] == "error"
             assert "not an empty memory result" in json.dumps(response)
@@ -523,10 +499,10 @@ def test_exact_repeat_is_suppressed_but_a_paraphrase_recalls_again(tmp_path: Pat
     assert repeat_row["repeat_suppressed"] is True
     assert repeat_row["rule_id"] == "exact-prompt-repeat"
     assert repeat_row["recall_invoked"] is False
-    assert repeated == {"continue": True}
+    assert repeated == {"decision": "skip", "context": ""}
     assert paraphrase_row["recall_invoked"] is True
     assert paraphrase_row["repeat_suppressed"] is False
-    assert "Untrusted governed context" in changed["hookSpecificOutput"]["additionalContext"]
+    assert "Untrusted governed context" in changed["context"]
 
 
 def test_scope_failures_do_not_mutate_bindings_or_accept_caller_namespace(tmp_path: Path, monkeypatch) -> None:
@@ -539,7 +515,7 @@ def test_scope_failures_do_not_mutate_bindings_or_accept_caller_namespace(tmp_pa
     assert evidence_rows(home)[-1]["rule_id"] == "no-project-binding"
     assert evidence_rows(home)[-1]["namespace"] is None
     assert not missing.exists()
-    assert "no governed project binding" in unbound["hookSpecificOutput"]["additionalContext"]
+    assert "no governed project binding" in unbound["context"]
 
     bind(repo, home, "project:one")
     bind(repo, home, "project:two")
@@ -551,7 +527,7 @@ def test_scope_failures_do_not_mutate_bindings_or_accept_caller_namespace(tmp_pa
     assert row["recall_invoked"] is False
     assert "project:forged" not in evidence_text(home)
     assert (home / "repository" / "bindings.json").read_bytes() == before
-    assert "ambiguous" in ambiguous["hookSpecificOutput"]["additionalContext"]
+    assert "ambiguous" in ambiguous["context"]
 
 
 def test_stale_memory_is_labeled_and_not_treated_as_authority(tmp_path: Path, monkeypatch) -> None:
@@ -561,7 +537,7 @@ def test_stale_memory_is_labeled_and_not_treated_as_authority(tmp_path: Path, mo
         task_payload(repo, "The old setup looks superseded and conflicts with the current server. PROMPT-SECRET-991")
     )
     row = evidence_rows(home)[-1]
-    context = response["hookSpecificOutput"]["additionalContext"]
+    context = response["context"]
     assert row["recall_state"] == "stale_conflict"
     assert row["stale_ids"]
     assert "not durable authority" in context
@@ -615,7 +591,24 @@ def test_compaction_preserves_continuity_without_transcript_or_recall(tmp_path: 
     remember(home, "project:fixture", MEMORY)
     before = memory_count(home)
     logs = tree_bytes(home / "logs")
-    codex = run_hook_payload(
+    compact = run_hook_payload(
+        {
+            "kind": "compaction",
+            "session_id": "session-1",
+            "cwd": str(repo),
+            "prompt": MATERIAL,
+        }
+    )
+    resumed = run_hook_payload(
+        {
+            "kind": "session_start",
+            "source": "compact",
+            "session_id": "session-1",
+            "cwd": str(repo),
+            "prompt": MATERIAL,
+        }
+    )
+    ignored_vendor = run_hook_payload(
         {
             "hook_event_name": "PreCompact",
             "trigger": "auto",
@@ -625,33 +618,15 @@ def test_compaction_preserves_continuity_without_transcript_or_recall(tmp_path: 
             "transcript_path": str(repo / "transcript.txt"),
         }
     )
-    resumed = run_hook_payload(
-        {
-            "hook_event_name": "SessionStart",
-            "source": "compact",
-            "session_id": "session-1",
-            "cwd": str(repo),
-            "prompt": MATERIAL,
-        }
-    )
-    opencode = run_hook_payload(
-        {
-            "host": "opencode",
-            "hook_event_name": "PreCompact",
-            "trigger": "auto",
-            "session_id": "session-1",
-            "cwd": str(repo),
-            "prompt": MATERIAL,
-        }
-    )
     rows = evidence_rows(home)
-    assert codex == {"continue": True}
-    assert rows[-3]["decision"] == "continuity"
-    assert rows[-3]["recall_invoked"] is False
-    assert "not a transcript" in resumed["hookSpecificOutput"]["additionalContext"]
-    assert "project:fixture" in resumed["hookSpecificOutput"]["additionalContext"]
-    assert MEMORY not in resumed["hookSpecificOutput"]["additionalContext"]
-    assert "not a transcript" in opencode["hookSpecificOutput"]["additionalContext"]
+    assert compact["decision"] == "continuity"
+    assert "not a transcript" in compact["context"]
+    assert "project:fixture" in compact["context"]
+    assert MEMORY not in compact["context"]
+    assert resumed["decision"] == "continuity"
+    assert "not a transcript" in resumed["context"]
+    assert ignored_vendor == {"decision": "ignore", "context": ""}
+    assert rows[-1]["kind"] == "ignore"
     assert memory_count(home) == before
     assert tree_bytes(home / "logs") == logs
     assert_no_private_text(home, resumed)
@@ -665,7 +640,7 @@ def test_recall_error_is_not_a_no_hit(tmp_path: Path, monkeypatch) -> None:
     assert row["recall_state"] == "error"
     assert row["recall_invoked"] is True
     assert row["error_type"]
-    assert "not an empty memory result" in response["hookSpecificOutput"]["additionalContext"]
+    assert "not an empty memory result" in response["context"]
 
 
 def test_cli_hook_entrypoint_handles_spaced_cwd_and_invalid_input(tmp_path: Path, monkeypatch) -> None:
@@ -684,7 +659,7 @@ def test_cli_hook_entrypoint_handles_spaced_cwd_and_invalid_input(tmp_path: Path
     )
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(completed.stdout)
-    assert "Untrusted governed context" in payload["hookSpecificOutput"]["additionalContext"]
+    assert "Untrusted governed context" in payload["context"]
     assert "PROMPT-SECRET-991" not in completed.stdout
     assert evidence_rows(home)[-1]["resolution_status"] == "bound"
     assert activation_evidence_path() == home / "lifecycle" / "activation-evidence.jsonl"
@@ -708,20 +683,17 @@ def _stop_artifact() -> dict[str, object]:
     }
 
 
-def _stop_payload(repo: Path, message: str) -> dict[str, object]:
+def _capture_payload(repo: Path, artifact: object, **extra: object) -> dict[str, object]:
     transcript = repo / "transcript.txt"
-    transcript.write_text("TRANSCRIPT-SECRET hidden reasoning\n" + message + "\n", encoding="utf-8")
+    transcript.write_text("TRANSCRIPT-SECRET hidden reasoning\n", encoding="utf-8")
     return {
-        "hook_event_name": "Stop",
+        "kind": "capture",
         "session_id": "thr_123",
         "turn_id": "turn_123",
         "cwd": str(repo / "nested dir"),
-        "model": "gpt-5.5",
-        "permission_mode": "default",
-        "stop_hook_active": False,
-        "transcript_path": str(transcript),
+        "visible_artifact": artifact,
         "namespace": "project:forged",
-        "last_assistant_message": message,
+        **extra,
     }
 
 
@@ -764,10 +736,10 @@ def test_codex_stop_structured_artifact_creates_hidden_needs_review_candidate(tm
     explicit = "Explicit user store remains visible beside lifecycle capture."
     remember(home, "project:fixture", explicit, title="Explicit store")
     artifact = _stop_artifact()
-    completed = _run_cli(_stop_payload(repo, json.dumps(artifact)))
+    completed = _run_cli(_capture_payload(repo, artifact))
     assert completed.returncode == 0, completed.stderr
     response = json.loads(completed.stdout)
-    assert response == {"continue": True}
+    assert response == {"decision": "skip", "context": ""}
     assert "hidden review lane" not in completed.stdout
     assert "project:forged" not in completed.stdout
 
@@ -778,13 +750,15 @@ def test_codex_stop_structured_artifact_creates_hidden_needs_review_candidate(tm
     assert row["is_learning_candidate"] == 1
     assert "candidate_status: needs_review" in row["content"]
     assert "capture_boundary: post_run" in row["content"]
-    assert "source_runtime: codex" in row["content"]
+    assert "source_runtime: lifecycle" in row["content"]
     assert "source_session_id: thr_123" in row["content"]
     assert "source_task_id: turn_123" in row["content"]
     assert "visible_artifact_id: decision-1" in row["content"]
-    digest = hashlib.sha256(json.dumps(artifact).encode()).hexdigest()
-    assert f"codex-stop:sha256:{digest}" in row["content"]
+    digest = hashlib.sha256(json.dumps(artifact, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    assert f"lifecycle:sha256:{digest}" in row["content"]
     receipt = json.loads((home / "lifecycle" / "capture-evidence.jsonl").read_text())
+    assert receipt["schema"] == "amb.lifecycle-capture-evidence.v1"
+    assert "hook_event_name" not in receipt
     assert receipt["writes"] == 1
     assert receipt["automatic_promotion"] is False
     assert receipt["record_ids"] == [row["id"]]
@@ -807,7 +781,7 @@ def test_codex_stop_structured_artifact_creates_hidden_needs_review_candidate(tm
     with pytest.raises(ValueError, match="cannot be promoted directly"):
         promote_entry(store, str(row["id"]), "learn")
 
-    repeated = _run_cli(_stop_payload(repo, json.dumps(artifact)))
+    repeated = _run_cli(_capture_payload(repo, artifact))
     assert repeated.returncode == 0, repeated.stderr
     assert len(_learning_rows(home)) == 1
     assert memory_count(home) == 2
@@ -823,14 +797,16 @@ def test_codex_stop_summary_and_wrapped_artifact_capture_nothing(tmp_path: Path,
     )
     wrapped = "Captured decision:\n```json\n" + json.dumps(_stop_artifact()) + "\n```"
     for message in (summary, wrapped):
-        completed = _run_cli(_stop_payload(repo, message))
+        completed = _run_cli(_capture_payload(repo, message))
         assert completed.returncode == 0, completed.stderr
-        assert json.loads(completed.stdout) == {"continue": True}
+        assert json.loads(completed.stdout) == {"decision": "skip", "context": ""}
     assert _learning_rows(home) == []
     assert memory_count(home) == before
     receipts = [json.loads(line) for line in (home / "lifecycle" / "capture-evidence.jsonl").read_text().splitlines()]
     assert len(receipts) == 2
     assert all(row["writes"] == 0 and row["disposition"] == "no_capture" for row in receipts)
+    assert all(row["schema"] == "amb.lifecycle-capture-evidence.v1" for row in receipts)
+    assert all("hook_event_name" not in row for row in receipts)
     assert "TRANSCRIPT-SECRET" not in evidence_text(home)
 
 
@@ -838,18 +814,27 @@ def test_codex_precompact_transcript_does_not_capture(tmp_path: Path, monkeypatc
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
     transcript = repo / "transcript.txt"
     transcript.write_text(json.dumps(_stop_artifact()) + "\nTRANSCRIPT-SECRET\n", encoding="utf-8")
-    response = run_hook_payload(
+    compaction_response = run_hook_payload(
         {
-            "hook_event_name": "PreCompact",
-            "trigger": "auto",
+            "kind": "compaction",
+            "session_id": "thr_123",
+            "turn_id": "turn_123",
+            "cwd": str(repo / "nested dir"),
+            "visible_artifact": _stop_artifact(),
+        }
+    )
+    assert compaction_response["decision"] == "continuity"
+    vendor_response = run_hook_payload(
+        {
+            "kind": "capture",
             "session_id": "thr_123",
             "turn_id": "turn_123",
             "cwd": str(repo / "nested dir"),
             "transcript_path": str(transcript),
-            "last_assistant_message": json.dumps(_stop_artifact()),
+            "visible_artifact": _stop_artifact(),
         }
     )
-    assert response == {"continue": True}
+    assert vendor_response == {"decision": "ignore", "context": ""}
     assert not (home / "bridge.db").exists()
     assert _learning_rows(home) == []
 
@@ -857,23 +842,24 @@ def test_codex_precompact_transcript_does_not_capture(tmp_path: Path, monkeypatc
 @pytest.mark.parametrize(
     "override",
     [
-        {"last_assistant_message": None},
-        {"last_assistant_message": "{"},
-        {"last_assistant_message": "[" * 2000 + "]" * 2000},
-        {"last_assistant_message": "\ud800"},
-        {"last_assistant_message": json.dumps({**_stop_artifact(), "claim": "界" * 1400}, ensure_ascii=False)},
-        {"last_assistant_message": json.dumps({**_stop_artifact(), "hidden_reasoning": "not retained"})},
+        {"visible_artifact": None},
+        {"visible_artifact": "{"},
+        {"visible_artifact": {"schema": "wrong"}},
+        {"visible_artifact": {**_stop_artifact(), "claim": "界" * 1400}},
+        {"visible_artifact": {**_stop_artifact(), "hidden_reasoning": "not retained"}},
         {"session_id": ""},
         {"turn_id": ""},
         {"host": "opencode"},
+        {"last_assistant_message": "vendor"},
     ],
 )
 def test_stop_rejects_unsafe_missing_or_wrong_host_input(tmp_path: Path, monkeypatch, override) -> None:
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
     remember(home, "project:fixture", MEMORY)
-    payload = _stop_payload(repo, json.dumps(_stop_artifact()))
+    payload = _capture_payload(repo, _stop_artifact())
     payload.update(override)
-    assert run_hook_payload(payload) == {"continue": True}
+    response = run_hook_payload(payload)
+    assert response["decision"] in {"skip", "ignore"}
     assert _learning_rows(home) == []
     assert memory_count(home) == 1
 
@@ -881,8 +867,10 @@ def test_stop_rejects_unsafe_missing_or_wrong_host_input(tmp_path: Path, monkeyp
 def test_stop_capture_failure_is_not_a_passing_negative_control(tmp_path: Path, monkeypatch) -> None:
     home, repo = prepare_task_repo(tmp_path, monkeypatch)
     (home / "bridge.db").write_text("not sqlite")
-    assert run_hook_payload(_stop_payload(repo, json.dumps(_stop_artifact()))) == {"continue": True}
+    assert run_hook_payload(_capture_payload(repo, _stop_artifact())) == {"decision": "skip", "context": ""}
     receipt = json.loads((home / "lifecycle" / "capture-evidence.jsonl").read_text())
+    assert receipt["schema"] == "amb.lifecycle-capture-evidence.v1"
+    assert "hook_event_name" not in receipt
     assert receipt["disposition"] == "error"
     assert receipt["writes"] is None
     assert receipt["automatic_promotion"] is None
@@ -893,8 +881,8 @@ def test_codex_stop_does_not_capture_without_binding_or_local_authority(tmp_path
     home = isolate(tmp_path, monkeypatch)
     repo = make_repo(tmp_path)
     (repo / "nested dir").mkdir()
-    unbound = run_hook_payload(_stop_payload(repo, json.dumps(_stop_artifact())))
-    assert unbound == {"continue": True}
+    unbound = run_hook_payload(_capture_payload(repo, _stop_artifact()))
+    assert unbound == {"decision": "skip", "context": ""}
     assert not (home / "bridge.db").exists()
 
     remote_root = tmp_path / "remote"
@@ -907,6 +895,6 @@ def test_codex_stop_does_not_capture_without_binding_or_local_authority(tmp_path
         raise AssertionError("local database opened despite a remote authority")
 
     monkeypatch.setattr("agent_mem_bridge.storage.MemoryStore", fail_if_opened)
-    remote = run_hook_payload(_stop_payload(repo, json.dumps(_stop_artifact())))
-    assert remote == {"continue": True}
+    remote = run_hook_payload(_capture_payload(repo, _stop_artifact()))
+    assert remote == {"decision": "skip", "context": ""}
     assert _learning_rows(home) == []

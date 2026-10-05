@@ -18,31 +18,21 @@ from .paths import (
     resolve_bridge_db_path,
     resolve_bridge_home,
     resolve_bridge_log_dir,
-    resolve_checkpoint_min_messages,
-    resolve_checkpoint_seconds,
     resolve_consolidation_scan_limit,
     resolve_consolidation_state_path,
     resolve_governance_trigger_scan_limit,
     resolve_governance_trigger_state_path,
-    resolve_idle_seconds,
     resolve_poll_seconds,
     resolve_reflex_enabled,
     resolve_reflex_scan_limit,
     resolve_reflex_state_path,
     resolve_service_slow_lane_seconds,
-    resolve_sessions_root,
-    resolve_watcher_enabled,
-    resolve_watcher_legacy_memory_mode,
-    resolve_watcher_log_dir,
-    resolve_watcher_notes_root,
-    resolve_watcher_state_path,
 )
 from .reflex import ReflexEngine, build_default_reflex_config
 from .service_health import ServiceHealthWriter
 from .service_lock import ServiceFileLock
 from .storage import MemoryStore
 from .telemetry import Telemetry
-from .watcher import CodexSessionWatcher, WatcherConfig
 
 MAX_LANE_BACKOFF_SECONDS = 300.0
 
@@ -178,7 +168,6 @@ def _run_cycle(
 def _set_cycle_span_attributes(span: object, result: dict[str, dict[str, object]]) -> None:
     span.set_attributes(
         {
-            "watcher_processed_count": result["watcher"].get("processed_count", 0),
             "reflex_processed_count": result["reflex"].get("processed_count", 0),
             "consolidation_processed_count": result["consolidation"].get("processed_count", 0),
             "governance_processed_count": result["governance"].get("processed_count", 0),
@@ -218,20 +207,6 @@ def _run_service_with_home(
         log_dir=resolve_bridge_log_dir(),
         telemetry=telemetry,
     )
-    watcher = CodexSessionWatcher(
-        WatcherConfig(
-            sessions_root=resolve_sessions_root(),
-            notes_root=resolve_watcher_notes_root(),
-            runtime_dir=bridge_home,
-            state_path=resolve_watcher_state_path(),
-            db_path=resolve_bridge_db_path(),
-            log_dir=resolve_watcher_log_dir(),
-            idle_seconds=resolve_idle_seconds(),
-            checkpoint_seconds=resolve_checkpoint_seconds(),
-            checkpoint_min_messages=resolve_checkpoint_min_messages(),
-            legacy_memory_mode=resolve_watcher_legacy_memory_mode(),
-        )
-    )
     reflex = ReflexEngine(
         store=store,
         config=build_default_reflex_config(
@@ -261,7 +236,6 @@ def _run_service_with_home(
     if slow_lane_seconds < 0:
         raise ValueError("service slow_lane_seconds must not be negative")
     lanes = {
-        "watcher": _ServiceLane("watcher", watcher.run_once, resolve_watcher_enabled),
         "reflex": _ServiceLane("reflex", reflex.run_once, resolve_reflex_enabled),
         "consolidation": _ServiceLane("consolidation", consolidation.run_once, lambda: True),
         "governance": _ServiceLane("governance", governance_trigger.run_once, lambda: True),

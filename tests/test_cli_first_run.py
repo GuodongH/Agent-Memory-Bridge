@@ -34,13 +34,8 @@ def _seed(store: MemoryStore) -> dict[str, object]:
 def _report(store: MemoryStore) -> dict[str, object]:
     return build_first_run_report(
         store,
-        client="generic",
         namespace=NAMESPACE,
         query=QUERY,
-        python_path="unused",
-        cwd=Path("unused"),
-        bridge_home=Path("unused"),
-        config_path=Path("unused"),
     )
 
 
@@ -58,6 +53,7 @@ def test_first_run_is_read_only_and_surfaces_real_durable_memory(tmp_path: Path)
     assert report["schema"] == "memory.first_run.v2"
     assert report["boundary"]["mutation_allowed"] is False
     assert report["boundary"]["memory_write_mode"] == "guided_existing_store_tool_only"
+    assert "setup" not in rendered
     assert report["recall"]["count"] == 1
     assert report["recall"]["items"][0]["memory_id"] == seeded["id"]
     assert "Run make check before submitting" in report["recall"]["items"][0]["summary"]
@@ -186,9 +182,11 @@ def test_first_run_help_hides_legacy_noop_configuration_controls(capsys) -> None
         assert visible in help_text
     for hidden in ("--client", "--python", "--cwd", "--bridge-home", "--config-path", "--example"):
         assert hidden not in help_text
+    assert "after setup" not in help_text
+    assert "setup connects" not in help_text
 
 
-def test_first_run_legacy_compatibility_flags_parse_without_changing_product_loop(
+def test_first_run_rejects_retired_client_configuration_flags(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -196,36 +194,11 @@ def test_first_run_legacy_compatibility_flags_parse_without_changing_product_loo
     store = _store(tmp_path)
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_DB_PATH", str(store.db_path))
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_LOG_DIR", str(tmp_path / "logs"))
-    args = [
-        "first-run",
-        "--namespace",
-        NAMESPACE,
-        "--query",
-        QUERY,
-        "--client",
-        "codex",
-        "--python",
-        "unused-python",
-        "--cwd",
-        str(tmp_path / "unused-cwd"),
-        "--bridge-home",
-        str(tmp_path / "unused-home"),
-        "--config-path",
-        str(tmp_path / "unused-config.toml"),
-        "--example",
-        "--format",
-        "json",
-    ]
-
-    assert main(args) == 0
-    payload = json.loads(capsys.readouterr().out)
-
-    assert payload["query"] == QUERY
-    assert payload["boundary"]["memory_write_mode"] == "guided_existing_store_tool_only"
-    assert payload["recall"]["count"] == 0
-    assert not (tmp_path / "unused-cwd").exists()
-    assert not (tmp_path / "unused-home").exists()
-    assert not (tmp_path / "unused-config.toml").exists()
+    for flag in ("--client", "--python", "--cwd", "--bridge-home", "--config-path", "--example"):
+        with pytest.raises(SystemExit) as exc_info:
+            main(["first-run", "--namespace", NAMESPACE, "--query", QUERY, flag, "retired"])
+        assert exc_info.value.code == 2
+    assert capsys.readouterr().out == ""
 
 
 def test_first_run_default_loop_uses_neutral_templates_and_coherent_question(

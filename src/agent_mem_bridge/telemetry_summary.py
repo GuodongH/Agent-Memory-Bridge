@@ -98,7 +98,6 @@ def summarize_telemetry(
         "service": {
             "poll_cycle_count": len(service_poll_spans),
             "run_once_count": len(service_run_once_spans),
-            "watcher_processed_total": _sum_attribute(filtered, "watcher_processed_count"),
             "reflex_processed_total": _sum_attribute(filtered, "reflex_processed_count"),
             "consolidation_processed_total": _sum_attribute(filtered, "consolidation_processed_count"),
             "governance_processed_total": _sum_attribute(filtered, "governance_processed_count"),
@@ -163,7 +162,6 @@ def render_telemetry_summary_text(summary: dict[str, Any]) -> str:
             "Service",
             f"- poll_cycle_count: {service['poll_cycle_count']}",
             f"- run_once_count: {service['run_once_count']}",
-            f"- watcher_processed_total: {service['watcher_processed_total']}",
             f"- reflex_processed_total: {service['reflex_processed_total']}",
             f"- consolidation_processed_total: {service['consolidation_processed_total']}",
             f"- governance_processed_total: {service['governance_processed_total']}",

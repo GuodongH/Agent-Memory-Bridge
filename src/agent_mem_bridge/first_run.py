@@ -1,15 +1,13 @@
-"""A read-only, product-language first-use guide for durable memory.
+"""A read-only first-use guide for the existing durable-memory loop.
 
-P2C intentionally reuses existing store, recall, Task Brief, and feedback
-contracts.  It never writes a demonstration memory, exposes a recall token, or
-alters ranking/promotion policy.  ``setup`` owns configuration; ``first-run``
-helps a connected user experience the existing durable-memory loop.
+It reuses store, recall, Task Brief, and feedback. It does not write a
+demonstration memory, expose a recall token, change ranking, or connect a
+coding client.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
 from .mcp_boundary import package_version
@@ -19,8 +17,7 @@ from .task_brief import build_task_brief_report
 FIRST_RUN_SCHEMA = "memory.first_run.v2"
 FIRST_RUN_BOUNDARY = "read_only_with_respect_to_user_memory_and_configuration"
 RELEASE_VERSION = package_version()
-# Retained stable install-contract constants. P2C intentionally removes them from
-# default first-run rendering because `setup` owns connection/configuration.
+# Retained stable install-contract constants. They stay out of the rendered guide.
 PINNED_INSTALL_VERSION = "0.27.0"
 GITHUB_ARCHIVE_URL = f"https://github.com/zzhang82/Agent-Memory-Bridge/archive/refs/tags/v{PINNED_INSTALL_VERSION}.zip"
 RELEASE_INSTALL_GATE_NOTE = f"Current package/source version is `{RELEASE_VERSION}`."
@@ -45,23 +42,11 @@ _SUPPRESSION_LANGUAGE = {
 def build_first_run_report(
     store: MemoryStore,
     *,
-    client: str,
     namespace: str,
     query: str,
-    python_path: str | Path | None,
-    cwd: str | Path | None,
-    bridge_home: str | Path | None,
-    config_path: str | Path | None,
-    example: bool = False,
 ) -> dict[str, Any]:
-    """Build a read-only first-use loop from existing durable-memory facts.
+    """Build a read-only first-use loop from existing durable-memory facts."""
 
-    The retained client/path parameters preserve parser compatibility only. They
-    do not affect recall, inspect a client, write configuration, or render a
-    client configuration in P2C.
-    """
-
-    del client, python_path, cwd, bridge_home, config_path, example
     cleaned_namespace = namespace.strip()
     cleaned_query = query.strip()
     if not cleaned_namespace:
@@ -88,13 +73,12 @@ def build_first_run_report(
         "boundary": {
             "mutation_allowed": False,
             "memory_write_mode": "guided_existing_store_tool_only",
-            "setup_owns_connection": True,
             "feedback_policy": "shadow_only_no_memory_or_ranking_change",
             "public_mcp_surface_change": False,
         },
         "connection": {
             "state": "not_checked",
-            "next": "Run `agent-memory-bridge setup` to connect safely, then use `doctor` or `verify` if connection health is unresolved.",
+            "next": "This guide does not connect a coding client. Use `doctor` or `verify` if connection health is unresolved.",
         },
         "remember": {
             "state": "guided_action_required" if not recall["items"] else "memory_already_available",

@@ -360,13 +360,8 @@ def test_v0274_compatible_schema12_database_remains_readable(tmp_path: Path, mon
     assert any(item["id"] == "legacy-memory" for item in recall["items"])
     first_run = build_first_run_report(
         store,
-        client="generic",
         namespace="project:bridge",
         query="byte-for-byte stable",
-        python_path=None,
-        cwd=None,
-        bridge_home=None,
-        config_path=None,
     )
     assert first_run["schema"] == "memory.first_run.v2"
     inspect = build_memory_inspect_report(store, namespace="project:bridge", query="byte-for-byte stable")

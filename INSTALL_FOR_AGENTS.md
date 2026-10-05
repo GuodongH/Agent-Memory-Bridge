@@ -59,58 +59,6 @@ below. Local editable checkout, optional `uvx`, and Docker remain optional
 routes. For the Phase 1 pilot, all clients must share the same user-chosen
 persistent `AGENT_MEMORY_BRIDGE_HOME`.
 
-## Safe Setup Preview and Apply
-
-Start with the bounded P2A preview. It remains read-only and always reports
-`Changes written: 0`:
-
-```text
-agent-memory-bridge setup --client <client>
-agent-memory-bridge setup --client <client> --json
-```
-
-P2B can apply only a fresh P2A plan whose target, format, ownership state, and
-bytes remain eligible at the time of the write. For a human-reviewed change,
-run:
-
-```text
-agent-memory-bridge setup --apply --client <client>
-```
-
-The command displays the client, target, classified existing state, planned
-action, and backup behavior, then requires `Apply these changes? [y/N]`.
-Declining or EOF writes nothing. Machine-readable automation is deliberately
-narrow: use `agent-memory-bridge setup --apply --yes --json`; `--yes` requires
-`--apply` and never bypasses a safety check. There is no `--force` switch.
-
-Automatic mutation is limited to structurally parsed JSON plans for Claude
-Code, VS Code, and the normal supported OpenCode JSON path when P2A has no
-alternate/project/custom/JSONC marker. Conflict, unreadable,
-inspection-unavailable, path-unknown, unsupported, and manual-review plans are
-never overwritten. Codex TOML remains preview-only in P2B because this source
-has a TOML parser but no safe TOML writer; P2B does not use string replacement
-or an ad-hoc TOML serializer.
-
-Before replacing an existing config, P2B re-plans, checks that target metadata
-is unchanged, writes a unique adjacent byte-for-byte backup, applies an
-atomic same-directory replacement, and re-reads the JSON to verify the AMB
-entry and preserved structure. It creates only the exact missing target parent
-for an eligible new config; it does not create bridge paths, a database, logs,
-or package-manager state. A metadata-only adjacent receipt supports one latest
-safe rollback per target:
-
-```text
-agent-memory-bridge setup --rollback --client <client>
-```
-
-Rollback is interactive and restores an exact backup for modified files, or
-removes a P2B-created file only if its digest still matches the applied result.
-It stops for post-apply user edits and never recursively removes user
-directories. Apply configures a client file only; it does not prove that a
-client loaded AMB or that AMB connected successfully. Follow with
-`agent-memory-bridge doctor --include-stdio` and `agent-memory-bridge verify`
-when their runtime prerequisites are available.
-
 ## Safe Install Path
 
 1. Inspect `llms-install.md`, `docs/INTEGRATIONS.md`, and
@@ -130,14 +78,10 @@ when their runtime prerequisites are available.
    `https://github.com/zzhang82/Agent-Memory-Bridge/archive/refs/tags/v0.30.0.zip`.
 4. Choose one persistent bridge home directory owned by the human and use it in
    every pilot client config.
-5. Render a real config fragment for the approved client before writing it:
-
-   ```text
-   <venv-python> -m agent_mem_bridge config --client <client> --python "<venv-python>" --cwd "<absolute-path-to-your-project>" --bridge-home "<absolute-path-to-one-persistent-bridge-home>"
-   ```
-
-6. Write the MCP client config only after confirming the target client.
-7. Run local checks:
+5. Copy the generic stdio shape below, or the matching shape in
+   `docs/INTEGRATIONS.md`, into the approved client. AMB does not write that
+   file.
+6. Run local checks:
 
    ```text
    <venv-python> -m agent_mem_bridge doctor
@@ -146,13 +90,13 @@ when their runtime prerequisites are available.
 
    `doctor` checks local prerequisites and paths. `verify` launches an isolated
    AMB stdio runtime. Neither proves the client loaded its config.
-8. If the client already has a running MCP server process, ask the human to
+7. If the client already has a running MCP server process, ask the human to
    restart that client, then use its MCP status/tool view to confirm the server
    registration and its 17-tool public surface.
 
-The custom `config.toml` path emitted by the renderer is optional for this
-baseline. If its default path has no file, `doctor` may warn and the baseline
-server can still run.
+An optional bridge `config.toml` is not required for this baseline. If its
+default path has no file, `doctor` may warn and the baseline server can still
+run.
 
 `uvx` remains an optional GitHub shortcut when `uv` is already installed. It is
 not a prerequisite for the baseline path.
@@ -179,7 +123,7 @@ Use this shape when the client supports JSON `mcpServers` config:
 }
 ```
 
-Client-specific examples live in `docs/INTEGRATIONS.md`.
+The generic installer contract and command shapes live in `docs/INTEGRATIONS.md`.
 
 ## Project Learning After Setup
 
@@ -228,7 +172,7 @@ such as `client_workspace` does not choose the namespace. This is not an MCP too
 
 ## Optional First Run Guide
 
-`setup` owns safe client connection. After the client is connected, use
+After the client is connected, use
 `first-run` as a product guide that is read-only with respect to user memory and client configuration:
 
 ```text

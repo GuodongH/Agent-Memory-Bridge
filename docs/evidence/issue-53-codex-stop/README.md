@@ -1,5 +1,8 @@
 # Codex Stop capture acceptance
 
+This is historical v0.35 evidence. `scripts/check_codex_stop_capture.py` is
+preserved on tag `v0.35.0` and is not part of current Core.
+
 On 2026-09-30, Codex CLI 0.157.1 invoked one native Stop callback in each of
 two controlled turns on Linux/WSL. The positive turn created one hidden
 `needs_review` candidate. The negative turn created none because it had no

@@ -906,17 +906,6 @@ def create_v027_episode_contract_fixture(root: Path) -> Path:
         "def test_operator_cli_mints_receipt_and_database_inverse_regression_guard():\n    pass\n",
     )
     write_file(
-        root / "tests" / "test_watcher.py",
-        "def test_default_watcher_pauses_an_idle_rollout_without_completing_it():\n    pass\n"
-        "def test_default_watcher_completes_only_after_an_explicit_host_close():\n    pass\n"
-        "def test_default_watcher_creates_an_explicit_continuation_after_terminal_growth():\n    pass\n",
-    )
-    write_file(
-        root / "tests" / "test_codex_rollout.py",
-        "def test_incremental_rollout_scan_reads_only_appended_bytes_and_keeps_bodies_out_of_cursor():\n    pass\n"
-        "def test_incremental_rollout_scan_detects_explicit_close_and_declared_goal_metadata():\n    pass\n",
-    )
-    write_file(
         root / "tests" / "test_mcp_raw_wire.py",
         "def test_raw_wire_modern_and_legacy_contracts():\n    pass\n"
         "def test_raw_wire_modern_and_legacy_memory_attribution_contracts():\n    pass\n"

@@ -572,15 +572,6 @@ def build_v027_episode_release_check(
             "test_governed_typed_events_preflight_blocked_resume_and_cas_replay",
             "test_operator_cli_mints_receipt_and_database_inverse_regression_guard",
         ),
-        "tests/test_watcher.py": (
-            "test_default_watcher_pauses_an_idle_rollout_without_completing_it",
-            "test_default_watcher_completes_only_after_an_explicit_host_close",
-            "test_default_watcher_creates_an_explicit_continuation_after_terminal_growth",
-        ),
-        "tests/test_codex_rollout.py": (
-            "test_incremental_rollout_scan_reads_only_appended_bytes_and_keeps_bodies_out_of_cursor",
-            "test_incremental_rollout_scan_detects_explicit_close_and_declared_goal_metadata",
-        ),
         "tests/test_mcp_raw_wire.py": (
             "test_raw_wire_modern_and_legacy_contracts",
             "test_raw_wire_modern_and_legacy_memory_attribution_contracts",

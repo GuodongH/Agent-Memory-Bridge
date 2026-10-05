@@ -109,7 +109,7 @@ def test_summarize_telemetry_aggregates_core_metrics() -> None:
     assert summary["signals"]["signal_write_count"] == 1
     assert summary["signals"]["memory_write_count"] == 1
     assert summary["service"]["poll_cycle_count"] == 1
-    assert summary["service"]["watcher_processed_total"] == 2
+    assert "watcher_processed_total" not in summary["service"]
     assert summary["service"]["governance_processed_total"] == 1
     assert summary["service"]["embedding_processed_total"] == 5
     assert summary["service"]["embedding_due_count"] == 1
@@ -137,7 +137,6 @@ def test_render_telemetry_summary_text_contains_core_sections() -> None:
         "service": {
             "poll_cycle_count": 1,
             "run_once_count": 0,
-            "watcher_processed_total": 1,
             "reflex_processed_total": 0,
             "consolidation_processed_total": 0,
             "governance_processed_total": 0,

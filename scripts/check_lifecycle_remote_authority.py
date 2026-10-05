@@ -167,7 +167,7 @@ def collect_case(case, root, pack):
                 url = f"http://127.0.0.1:{refused.getsockname()[1]}/mcp"
             os.environ["AGENT_MEMORY_BRIDGE_AUTHORITY_URL"] = url
             payload = {
-                "hook_event_name": "UserPromptSubmit",
+                "kind": "task_prompt",
                 "session_id": "remote-fixture",
                 "cwd": str(repo),
                 "namespace": "project:forged",
@@ -255,8 +255,8 @@ def score(report):
                         "repeat_suppressed": repeated,
                         "ignored_caller_scope": True,
                         "adapter_loaded": True,
-                        "host": "codex",
-                        "hook_event_name": "UserPromptSubmit",
+                        "host": "core",
+                        "kind": "task_prompt",
                         "availability": "unknown"
                         if state == "skipped"
                         else "error"
@@ -278,7 +278,7 @@ def score(report):
         ):
             errors.append("responses_missing")
         else:
-            if any(r.get("continue") is not True for r in responses):
+            if any(r.get("decision") not in {"recall", "reconcile", "skip"} for r in responses):
                 errors.append("host_not_continued")
             text = json.dumps(responses)
             if "CONFLICTING-LOCAL-TRAP" in text:
@@ -295,7 +295,7 @@ def score(report):
                 errors.append("error_context_missing")
             if case["id"] in {"skip", "no_hit", "unavailable"} and "REMOTE-AUTHORITY-CONSTRAINT" in text:
                 errors.append("unexpected_context")
-            if case["id"] in {"skip", "repeat"} and responses[-1] != {"continue": True}:
+            if case["id"] in {"skip", "repeat"} and responses[-1] != {"decision": "skip", "context": ""}:
                 errors.append("skip_context_injected")
         reasons.extend(f"{case['id']}:{error}" for error in errors)
     return {"hook_contract": "FAIL" if reasons else "PASS", "native_codex_acceptance": "NOT_RUN", "reasons": reasons}

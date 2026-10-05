@@ -52,30 +52,14 @@ the selected bridge home. Capture errors have unknown write/promotion counts,
 not a passing zero-write result. Unbound or ambiguous scope and remote authority
 fail closed without a local fallback.
 
-## Live host check
+## Historical host check
 
-Use a Python environment with this repository and its dependencies:
-
-```bash
-python scripts/check_codex_stop_capture.py \
-  --output /path/to/new-private-evidence-directory \
-  --model <available-model> --reviewed-fixture-hook
-```
-
-The collector ignores user config and rules. Supply necessary model/provider
-settings with repeated `-c key=value` arguments; never put credentials in
-arguments. Authentication stays with the host's usual mechanism. The approval
-flag permits the reviewed, invocation-scoped fixture hook without installing
-hooks or persisting trust. Known ambient hook files are rejected and plugins
-disabled. Two fixture repositories and local stores leave the operator's AMB
-authority untouched.
-
-Both lanes require exit 0, the exact nonempty visible fixture reply,
-`turn.completed`, and one matching Stop receipt. Missing callbacks cannot pass
-the negative control; model tool execution invalidates the trial. The positive
-lane requires one hidden `needs_review` candidate, the negative lane zero.
-Explicitly seeded memory must remain unchanged and visible. Ordinary recall,
-browse, and export must exclude the candidate.
+Tag `v0.35.0` preserves `scripts/check_codex_stop_capture.py` and the recorded
+Codex Stop trial. Current Core does not ship or run that collector, and the
+trial does not accept the generic lifecycle boundary. The historical positive
+lane created one hidden `needs_review` candidate; the negative lane created
+zero. Explicitly seeded memory stayed unchanged, and ordinary recall, browse,
+and export excluded the candidate.
 
 Private output includes `report.json`, controlled visible messages, receipts,
 and fixture databases, but no reasoning or full host event stream. The report

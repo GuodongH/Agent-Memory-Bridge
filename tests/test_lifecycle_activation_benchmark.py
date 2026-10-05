@@ -16,7 +16,6 @@ from tools.evidence.lifecycle_activation import (
     assess_fixture_access,
     build_allowlisted_filesystem_argv,
     build_codex_collect_argv,
-    check_pack,
     expand_probe,
     find_bwrap,
     host_lanes,
@@ -28,12 +27,10 @@ from tools.evidence.lifecycle_activation import (
     parse_codex_exec_jsonl,
     parse_opencode_run_json,
     prepare_collector_layout,
-    prepare_governed_fixture,
     render_collector_codex_preamble,
-    render_isolated_codex_config,
     render_local_proxy_mcp_stanza,
-    render_opencode_remote_config,
     sandbox_for_case,
+    score_embedded_probes,
     score_observation,
     score_pack,
     scorer_sha256,
@@ -47,10 +44,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_frozen_pack_is_internally_consistent() -> None:
-    report = check_pack(ROOT)
-    assert report["ok"], report["problems"]
-    assert report["case_count"] == 10
-    assert validate_pack(load_pack()) == []
+    for version in ("v1", "v2"):
+        freeze = verify_freeze(ROOT, version)
+        assert freeze["ok"], freeze
+        pack = load_pack(version=version)
+        assert validate_pack(pack, version) == []
+        assert score_embedded_probes(pack) == []
+        if version == "v1":
+            assert len(pack["cases"]) == 10
 
 
 def test_remembered_prose_without_a_tool_call_fails() -> None:
@@ -207,22 +208,6 @@ def test_case_memories_seed_without_touching_a_live_database(tmp_path: Path) -> 
 
 def _case(case_id: str) -> dict:
     return next(case for case in load_pack(PACK_PATH)["cases"] if case["id"] == case_id)
-
-
-def test_isolated_codex_config_does_not_bind_production(tmp_path: Path) -> None:
-    bridge = tmp_path / "bridge"
-    config = tmp_path / "config.toml"
-    rendered = render_isolated_codex_config(
-        python_path=sys.executable,
-        cwd=str(tmp_path),
-        bridge_home=str(bridge),
-        config_path=str(config),
-        source_root=str(tmp_path / "src"),
-    )
-    assert "AGENT_MEMORY_BRIDGE_HOME" in rendered
-    assert "192.168." not in rendered
-    assert "58080" not in rendered
-    assert "AGENT_MEMORY_BRIDGE_REMOTE_URL" not in rendered
 
 
 def test_codex_collector_keeps_the_store_out_of_the_workspace(tmp_path: Path) -> None:
@@ -610,89 +595,6 @@ def test_adapter_collector_does_not_disable_plugins(tmp_path: Path) -> None:
     assert "memories = false" in preamble
 
 
-def test_v2_fixture_resolves_namespace_from_the_git_binding(tmp_path: Path) -> None:
-    from agent_mem_bridge.project_resolution import resolve_project_context
-
-    pack = load_pack(version="v2")
-    assert validate_pack(pack, "v2") == []
-    case = next(item for item in pack["cases"] if item["id"] == "known-project-gotcha")
-    assert case["expected_namespace"] not in case["prompt"]
-    for content in case["fixture"]["files"].values():
-        assert case["expected_namespace"] not in content
-    prepared = prepare_governed_fixture(case, tmp_path / "prepared", host="opencode")
-    command = prepared["command"]
-    bridge = str(prepared["bridge_home"])
-    assert "collect-opencode" in command
-    assert "opencode run" not in command
-    assert "--pure" not in command.split()
-    assert bridge not in command
-    assert "fixture-store.sqlite" not in command
-    assert "AGENT_MEMORY_BRIDGE_HOME" not in command
-    assert "192.168." not in command and ":58080" not in command
-    assert str(Path.home() / ".config" / "opencode") not in command
-    plugin_path = ROOT / "adapters" / "opencode" / "amb-lifecycle.js"
-    assert prepared["plugin_path"].read_bytes() == plugin_path.read_bytes()
-    assert not prepared["wrapper_path"].is_relative_to(prepared["fixture_repo"])
-    wrapper = prepared["wrapper_path"].read_text(encoding="utf-8")
-    assert OPENCODE_STORE_MOUNT in wrapper
-    assert bridge not in wrapper
-    assert "fixture-store.sqlite" not in wrapper
-    config = json.loads(prepared["client_config_path"].read_text(encoding="utf-8"))
-    assert config["permission"] == {"task": "deny"}
-    server = config["mcp"]["agentMemoryBridge"]
-    assert server == {
-        "type": "remote",
-        "url": "http://127.0.0.1:9/mcp",
-        "enabled": True,
-        "oauth": False,
-    }
-    rendered_config = prepared["client_config_path"].read_text(encoding="utf-8")
-    assert bridge not in rendered_config
-    assert "fixture-store.sqlite" not in rendered_config
-    assert "AGENT_MEMORY_BRIDGE_HOME" not in rendered_config
-    assert "192.168." not in rendered_config
-    assert "58080" not in rendered_config
-    env_text = json.dumps(prepared["process_env"])
-    assert "XDG_CONFIG_HOME" in prepared["process_env"]
-    assert bridge not in env_text
-    assert "AGENT_MEMORY_BRIDGE_HOME" not in env_text
-    assert "fixture-store.sqlite" not in env_text
-    plain_argv = prepared["plain_sandbox_argv"]
-    adapter_argv = prepared["adapter_sandbox_argv"]
-    plain_tail = "\n".join(plain_argv[plain_argv.index("--") + 1 :])
-    adapter_tail = "\n".join(adapter_argv[adapter_argv.index("--") + 1 :])
-    for tail in (plain_tail, adapter_tail):
-        assert bridge not in tail
-        assert "AGENT_MEMORY_BRIDGE_HOME" not in tail
-        assert "fixture-store.sqlite" not in tail
-        assert "--pure" not in tail.split()
-        assert "opencode" in tail.split()
-        assert "run" in tail.split()
-    assert bridge not in "\n".join(plain_argv)
-    assert OPENCODE_STORE_MOUNT not in "\n".join(plain_argv)
-    assert bridge in "\n".join(adapter_argv)
-    assert OPENCODE_STORE_MOUNT in "\n".join(adapter_argv)
-    assert not prepared["bridge_home"].is_relative_to(prepared["fixture_repo"].parent)
-    assert not prepared["client_home"].is_relative_to(prepared["fixture_repo"].parent)
-    assert prepared["config_home"].is_dir()
-    assert not prepared["config_home"].is_relative_to(Path.home() / ".config")
-    assert prepared["fixture_repo"].joinpath(".git").exists()
-    with_headers = render_opencode_remote_config(
-        url="http://127.0.0.1:9/mcp",
-        headers={"X-Fixture": "loopback"},
-    )
-    assert "X-Fixture" in with_headers
-    assert '"task": "deny"' in with_headers
-    assert "fixture-store.sqlite" not in with_headers
-    resolved = resolve_project_context(
-        prepared["fixture_repo"],
-        snapshot_root=prepared["bridge_home"] / "repository",
-    )
-    assert resolved["status"] == "bound"
-    assert resolved["namespace"] == case["expected_namespace"]
-    assert case["expected_namespace"] not in prepared["prompt_path"].read_text(encoding="utf-8")
-
-
 def test_opencode_json_normalizes_a_stopped_turn() -> None:
     case = _case("known-project-gotcha")
     marker = str(case["useful_marker"])
@@ -1036,7 +938,7 @@ def test_remote_hook_uses_binding_home_and_preserves_jsonl(tmp_path: Path) -> No
             [sys.executable, str(capture)], input=payload, text=True, capture_output=True, timeout=20
         )
         assert completed.returncode == 0, completed.stderr
-        assert json.loads(completed.stdout)["continue"] is True
+        assert json.loads(completed.stdout) == {"decision": "ignore", "context": ""}
     records = module._adapter_records(bridge)
     assert len(records) == 2
     responses = (bridge / "lifecycle" / "hook-responses.jsonl").read_text().splitlines()

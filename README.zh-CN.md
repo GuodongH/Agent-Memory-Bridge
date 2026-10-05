@@ -25,7 +25,7 @@
 pip install agent-memory-bridge
 ```
 
-**AMB 只需要安装一次，但每个编码客户端都要分别连接。** 安装 Python 包不会自动把 AMB 注册到所有编码智能体里。你想使用的每个客户端都需要配置为通过 MCP stdio 启动 AMB；如果多个客户端要共享同一份记忆，它们需要指向同一个已配置的本地 AMB home。
+连接具体的编码客户端属于 AMB Core 范围之外。AMB 不会发现、写入或认证 Codex、Claude、Cursor、OpenCode、Hermes、Cline、VS Code 或 Antigravity。客户端独立将 AMB 配置为标准 MCP stdio 服务；共享项目记忆的客户端需要指向同一个本地 AMB home。通用安装与注册契约请见[集成文档](docs/INTEGRATIONS.md)。
 
 ## 你的项目不该在每个新会话里重新开始
 
@@ -50,11 +50,11 @@ AMB 需要 **Python 3.11+**、Git，以及能够启动本地 stdio server 的 MC
 
 已发布版本请见 [GitHub Releases](https://github.com/zzhang82/Agent-Memory-Bridge/releases)。
 
-第一次成功发生在编码智能体里，而且必须是一个全新会话。CLI Explore/Inspect 以及 `doctor`/`verify` 是后续检查，不是这次成功本身。
+当前产品路径包含四个步骤：安装 AMB、初始化或解析项目、运行通用 MCP 服务，以及使用或检查记忆。客户端连接不属于 Core。
 
 ### 1. 安装 AMB
 
-快速开始建议使用虚拟环境，让所有编码客户端都能指向一个稳定的 Python launcher。请根据操作系统，用 `.amb-venv` 中的 Python 可执行文件代替 `<venv-python>`。
+快速开始建议使用虚拟环境，让 MCP 服务指向一个稳定的 Python launcher。请根据操作系统，用 `.amb-venv` 中的 Python 可执行文件代替 `<venv-python>`。
 
 ```bash
 python -m venv .amb-venv
@@ -67,53 +67,37 @@ python -m venv .amb-venv
 <venv-python> -m pip install -e .
 ```
 
-### 2. 连接你实际使用的编码客户端
-
-安装 AMB 和把客户端注册到 AMB 是两件事。先只预览一个客户端的设置方案：
-
-```bash
-<venv-python> -m agent_mem_bridge setup --client <client>
-```
-
-`setup` 默认只读：它只会在有边界的客户端配置位置做检测或检查，并展示建议的 AMB 配置片段或下一步动作，不会直接写配置。`<client>` 可以使用 `codex`、`claude-code`、`vscode`、`cursor`、`cline`、`opencode`，或[集成文档](docs/INTEGRATIONS.md)中列出的其他支持客户端。Codex 是参考工作流。
-
-如果预览结果明确标记该客户端可以进行安全自动配置，可以在检查后显式执行：
-
-```bash
-<venv-python> -m agent_mem_bridge setup --client <client> --apply
-```
-
-有些客户端仍然只支持 preview/manual，因为 AMB 不会猜测不安全的配置路径，也不会冒险重写不适合自动修改的格式。这时请复制生成的配置片段，或按对应的[集成指南](docs/INTEGRATIONS.md)完成设置。你要使用几个编码客户端，就分别重复这一步几次；如果它们要共享同一份项目记忆，请让它们都指向同一个 `AGENT_MEMORY_BRIDGE_HOME`，完成注册后再重载对应客户端。
-
-只有编码客户端自己列出了 `store`、`recall` 这些 AMB 工具，才算连接成功。`doctor` 和 `verify` 不能证明外部客户端已经加载了 MCP 配置。
-
-### 3. 初始化项目
+### 2. 初始化或解析项目
 
 ```bash
 <venv-python> -m agent_mem_bridge project init .
 ```
 
-Project Init 会检测本地 Git 仓库，建议一个类似 `project:my-app` 的 namespace，并等待你确认。随后它会派生当前仓库 baseline。它不会自动学习项目决策。
+Project Init 会检测本地 Git 仓库，建议一个类似 `project:my-app` 的 namespace，并等待你确认。随后它会派生当前仓库 baseline。它不会自动学习项目决策。绑定后，可使用 `project resolve .` 解析当前检出的 namespace，无需重新初始化。
 
-### 4. 教给项目一个真实决策
+### 3. 运行通用 MCP 服务
 
-在已连接的编码智能体里，告诉它一个你真正做过的决策。例如：
+将 AMB 作为标准 MCP stdio 服务运行：命令为 `<venv-python>`，参数为 `-m agent_mem_bridge`，并使用所有访问该项目记忆的客户端所共享的持久 `AGENT_MEMORY_BRIDGE_HOME`。
+
+客户端如何启动这个进程不属于 Core。命令形式见[集成文档](docs/INTEGRATIONS.md)。
+
+当客户端列出 AMB 的标准 MCP 工具（如 `store` 和 `recall`）时，即表明连接有效。`doctor` 和 `verify` 等健康检查验证的是服务端先决条件，而不是外部客户端配置的加载情况。
+
+### 4. 使用或检查记忆
+
+在已连接的客户端中，使用 AMB 公开的 `store` 工具教给项目一个显式决策：
 
 > 记住：我们只在目标分支 CI 全绿之后才合并 pull request，因为主分支坏掉已经耽误了两次发布。
 
-已连接的智能体会使用 AMB 公开的 `store` 工具，保存这项明确决策及其理由。AMB 不会从代码中推断出持久决策，也不会归档整段对话。
+智能体会将这项显式决策与理由保存在项目 namespace 下。AMB 不会从代码中推断决策，也不会归档对话记录。
 
-另一个有效例子是技术选型，例如继续保持本地优先、不引入 Redis。成功标准是“决策 + 理由”，而不是某一种技术本身。
-
-### 5. 关掉当前会话，再在全新会话里问一次
-
-彻底结束第一个智能体会话。用同一个项目、同一套客户端注册、同一个 AMB home 打开新会话，然后问一个普通问题：
+在针对同一项目和同一 AMB home 的全新会话中提问：
 
 > 合并 pull request 之前必须满足什么条件？
 
-第一次成功，是新会话因为 AMB 召回了记忆，而答出刚才那条决策和理由。在 CLI Explore 或 Inspect 里看到同一条事实，只是事后审阅，不是这次成功的判定标准。
+新会话将因为 AMB 召回了该项记忆而答出刚才保存的决策与理由。在 CLI Explore 或 Inspect 中看到该条事实是很有用的审阅手段，但并非成功验收标准。
 
-Codex 的完整观察步骤见[首次成功验收](docs/FIRST-WIN-ACCEPTANCE.md)。
+v0.35 系列的历史 Codex 观察记录参见[首次成功验收](docs/FIRST-WIN-ACCEPTANCE.md)。
 
 ## 第一次成功之后
 
@@ -175,9 +159,7 @@ Tests: pytest                   两次发布
 
 ## 集成
 
-AMB 通过本地 stdio MCP 工作。它支持通用 MCP 客户端；Codex 是参考工作流；Claude Code、Claude Desktop、Cursor 和 Cline 已有文档；Antigravity、OpenCode 和 Hermes 则有本地实测配置路径。
-
-这些集成标签有意保持窄口径，不代表客户端认证。当前设置方式和边界请见[集成文档](docs/INTEGRATIONS.md)。
+AMB 作为通用本地 stdio MCP 服务运行。客户端连接不属于 Core。命令形式、项目初始化、生命周期钩子输入和服务端检查见[集成文档](docs/INTEGRATIONS.md)。
 
 ## 为什么这份记忆能保持可信
 
@@ -206,12 +188,12 @@ AMB 是面向编码智能体的、受治理的本地项目记忆层。它让有�
 
 | 文档 | 用途 |
 |---|---|
-| [首次成功验收](docs/FIRST-WIN-ACCEPTANCE.md) | Codex 首次成功的精确观察包 |
+| [首次成功验收](docs/FIRST-WIN-ACCEPTANCE.md) | v0.35 系列的历史 Codex 观察记录 |
 | [架构](docs/ARCHITECTURE.md) | 系统形态与数据流 |
 | [权威模型](docs/AUTHORITY-CONTRACT.md) | 持久权威、派生视图、修正与审计规则 |
 | [Knowledge Explorer](docs/KNOWLEDGE-EXPLORER.md) | 面向人的只读项目视图 |
 | [生产状态](docs/PRODUCTION-STATUS.md) | 当前实现事实、证据与已知边界 |
-| [集成](docs/INTEGRATIONS.md) | 针对不同客户端的本地 MCP 设置 |
+| [集成](docs/INTEGRATIONS.md) | 通用 stdio MCP 安装契约 |
 | [智能体安装指南](INSTALL_FOR_AGENTS.md) | 从安装到首次成功的完整流程 |
 | [配置](docs/CONFIGURATION.md) | 完整配置参考 |
 | [示例](examples/README.md) | 脱敏 Demo 与工件 |

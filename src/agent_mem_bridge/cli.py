@@ -9,7 +9,6 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Sequence
 
-from .client_config import build_client_config_options, render_client_config, supported_client_names
 from .cross_client_activation import build_activation_receipt_from_db, render_activation_receipt_markdown
 from .database_maintenance import (
     backup_database,
@@ -33,7 +32,6 @@ from .paths import (
     resolve_bridge_db_path,
     resolve_bridge_home,
     resolve_bridge_log_dir,
-    resolve_config_path,
     resolve_repository_snapshot_root,
 )
 from .project_init import (
@@ -55,15 +53,6 @@ from .run_consolidation import (
     stage_run_consolidation_report,
 )
 from .service_lock import ServiceFileLock, ServiceLockConflict
-from .setup_apply import (
-    apply_setup_plan,
-    capture_setup_apply_snapshot,
-    render_setup_apply_confirmation,
-    render_setup_apply_result,
-    render_setup_rollback_result,
-    rollback_setup_plan,
-)
-from .setup_planner import build_setup_plan, render_setup_plan
 from .storage import MemoryStore
 from .task_brief import build_task_brief_report, render_task_brief_markdown
 
@@ -104,10 +93,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if namespace.command == "service":
         return _run_service(namespace)
-    if namespace.command == "config":
-        return _run_config(namespace)
-    if namespace.command == "setup":
-        return _run_setup(namespace)
     if namespace.command == "first-run":
         return _run_first_run(namespace)
     if namespace.command == "bootstrap-repo":
@@ -164,15 +149,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _run_lifecycle_hook(_namespace: argparse.Namespace) -> int:
     raw = sys.stdin.read()
     if not raw.strip():
-        print("{}")
+        print(json.dumps({"decision": "ignore", "context": ""}))
         return 0
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
-        print(json.dumps({"continue": True, "systemMessage": "AMB lifecycle hook ignored invalid input."}))
+        print(json.dumps({"decision": "ignore", "context": ""}))
         return 0
     if not isinstance(payload, dict):
-        print(json.dumps({"continue": True, "systemMessage": "AMB lifecycle hook ignored invalid input."}))
+        print(json.dumps({"decision": "ignore", "context": ""}))
         return 0
     from .lifecycle_activation import run_hook_payload
 
@@ -190,103 +175,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     add_http_arguments(serve_parser)
 
-    service_parser = subparsers.add_parser("service", help="Run watcher, reflex, and consolidation service loop.")
+    service_parser = subparsers.add_parser("service", help="Run reflex and consolidation service loop.")
     service_parser.add_argument("--once", action="store_true", help="Run one service cycle and exit.")
     service_parser.add_argument(
         "--allow-multiple-services",
         action="store_true",
         help="Explicitly bypass the bridge-home singleton service lock.",
-    )
-
-    config_parser = subparsers.add_parser("config", help="Render a client config fragment.")
-    config_parser.add_argument("--client", required=True, choices=supported_client_names())
-    config_parser.add_argument(
-        "--python",
-        dest="python_path",
-        default=sys.executable,
-        help="Python executable that should launch `-m agent_mem_bridge`.",
-    )
-    config_parser.add_argument(
-        "--cwd",
-        type=Path,
-        default=Path.cwd(),
-        help="Working directory to embed in the client config.",
-    )
-    config_parser.add_argument(
-        "--bridge-home",
-        type=Path,
-        default=resolve_bridge_home(),
-        help="Bridge home path to embed in the client config.",
-    )
-    config_parser.add_argument(
-        "--config-path",
-        type=Path,
-        default=resolve_config_path(),
-        help="Config path to embed in the client config.",
-    )
-    config_parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="Optional output path. Defaults to stdout.",
-    )
-    config_parser.add_argument("--force", action="store_true", help="Allow overwriting --output.")
-    config_parser.add_argument(
-        "--example",
-        action="store_true",
-        help="Render placeholder-safe example output instead of local runtime paths.",
-    )
-
-    setup_parser = subparsers.add_parser(
-        "setup",
-        help="Preview a read-only client setup plan; no configuration is written.",
-    )
-    setup_parser.add_argument(
-        "--client",
-        action="append",
-        choices=supported_client_names(),
-        default=None,
-        help="Supported client to plan. Repeat for multiple clients; default plans every supported client.",
-    )
-    setup_parser.add_argument("--json", action="store_true", help="Emit deterministic JSON instead of plain text.")
-    setup_parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Explicitly apply only P2A-classified safe configuration changes after confirmation.",
-    )
-    setup_parser.add_argument(
-        "--yes",
-        action="store_true",
-        help="Confirm a JSON safe apply non-interactively; requires --apply and never bypasses safety checks.",
-    )
-    setup_parser.add_argument(
-        "--rollback",
-        action="store_true",
-        help="Interactively roll back only the latest matching P2B-owned configuration change.",
-    )
-    setup_parser.add_argument(
-        "--python",
-        dest="python_path",
-        default=sys.executable,
-        help="Python executable shown in the proposed fragment; it is not executed.",
-    )
-    setup_parser.add_argument(
-        "--cwd",
-        type=Path,
-        default=Path.cwd(),
-        help="Project directory used only for bounded workspace-config inspection.",
-    )
-    setup_parser.add_argument(
-        "--bridge-home",
-        type=Path,
-        default=resolve_bridge_home(),
-        help="Bridge home path shown in the proposed fragment; it is not created.",
-    )
-    setup_parser.add_argument(
-        "--config-path",
-        type=Path,
-        default=resolve_config_path(),
-        help="AMB config path shown in the proposed fragment; it is not read or created by setup.",
     )
 
     project_parser = subparsers.add_parser(
@@ -351,7 +245,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     first_run_parser = subparsers.add_parser(
         "first-run",
-        help="Guide a read-only durable-memory loop after setup connects AMB.",
+        help="Guide a read-only durable-memory loop without changing stored memory.",
     )
     first_run_parser.add_argument(
         "--namespace", default="project:demo", help="Project namespace for the durable-memory loop."
@@ -389,17 +283,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Render the detailed graph/audit Markdown. Valid only with --format markdown.",
     )
-
-    # Retained parser compatibility only. P2C does not inspect or render these
-    # values, so they must not appear as meaningful first-run controls.
-    first_run_parser.add_argument(
-        "--client", default="generic", choices=supported_client_names(), help=argparse.SUPPRESS
-    )
-    first_run_parser.add_argument("--python", dest="python_path", default=sys.executable, help=argparse.SUPPRESS)
-    first_run_parser.add_argument("--cwd", type=Path, default=Path.cwd(), help=argparse.SUPPRESS)
-    first_run_parser.add_argument("--bridge-home", type=Path, default=resolve_bridge_home(), help=argparse.SUPPRESS)
-    first_run_parser.add_argument("--config-path", type=Path, default=resolve_config_path(), help=argparse.SUPPRESS)
-    first_run_parser.add_argument("--example", action="store_true", help=argparse.SUPPRESS)
 
     doctor_parser = subparsers.add_parser("doctor", help="Run non-invasive onboarding checks.")
     doctor_parser.add_argument("--json", action="store_true", help="Emit JSON instead of plain text.")
@@ -526,7 +409,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser(
         "lifecycle-hook",
-        help="Evaluate one optional host lifecycle event from stdin. Codex Stop may store one hidden review candidate.",
+        help="Evaluate one optional lifecycle event from stdin.",
     )
     activation_receipt_parser.add_argument("--namespace", required=True, help="Namespace to inspect.")
     activation_receipt_parser.add_argument("--correlation-id", required=True, help="Correlation id to inspect.")
@@ -665,87 +548,6 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_config(namespace: argparse.Namespace) -> int:
-    options = build_client_config_options(
-        namespace.client,
-        python_path=namespace.python_path,
-        cwd=namespace.cwd,
-        bridge_home=namespace.bridge_home,
-        config_path=namespace.config_path,
-        example=namespace.example,
-    )
-    rendered = render_client_config(options)
-
-    if namespace.output is not None:
-        output_path: Path = namespace.output
-        if output_path.exists() and not namespace.force:
-            print(f"Refusing to overwrite existing file: {output_path}", file=sys.stderr)
-            return 3
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(rendered.content + "\n", encoding="utf-8")
-        print(str(output_path))
-        return 0
-
-    print(rendered.content)
-    return 0
-
-
-def _run_setup(namespace: argparse.Namespace) -> int:
-    if namespace.yes and not namespace.apply:
-        print("setup --yes requires --apply", file=sys.stderr)
-        return 2
-    if namespace.apply and namespace.rollback:
-        print("setup --apply and --rollback cannot be combined", file=sys.stderr)
-        return 2
-    if namespace.rollback and namespace.json:
-        print("setup --rollback requires interactive human confirmation and cannot use --json", file=sys.stderr)
-        return 2
-
-    def build_plan():
-        return build_setup_plan(
-            clients=namespace.client,
-            cwd=namespace.cwd,
-            python_path=namespace.python_path,
-            bridge_home=namespace.bridge_home,
-            bridge_config_path=namespace.config_path,
-        )
-
-    plan = build_plan()
-    if namespace.rollback:
-        print(render_setup_apply_confirmation(plan))
-        if not _confirm_setup_mutation("Rollback P2B-owned changes? [y/N] "):
-            print("No changes were made.")
-            return 0
-        rollback_result = rollback_setup_plan(plan)
-        print(render_setup_rollback_result(rollback_result))
-        return 1 if any(client.status == "failed" for client in rollback_result.clients) else 0
-
-    if not namespace.apply:
-        if namespace.json:
-            print(json.dumps(plan.as_dict(), indent=2, sort_keys=True))
-        else:
-            print(render_setup_plan(plan))
-        return 0
-
-    if namespace.json and not namespace.yes:
-        print("setup --apply --json requires --yes to avoid an interactive machine-readable prompt", file=sys.stderr)
-        return 2
-
-    snapshot = capture_setup_apply_snapshot(plan)
-    if not namespace.yes:
-        print(render_setup_apply_confirmation(plan))
-        if not _confirm_setup_mutation("Apply these changes? [y/N] "):
-            print("No changes were made.")
-            return 0
-
-    apply_result = apply_setup_plan(plan, current_plan=build_plan(), snapshot=snapshot)
-    if namespace.json:
-        print(json.dumps(apply_result.as_dict(), indent=2, sort_keys=True))
-    else:
-        print(render_setup_apply_result(apply_result))
-    return 1 if any(client.status == "failed" for client in apply_result.clients) else 0
-
-
 def _confirm_setup_mutation(prompt: str) -> bool:
     try:
         return input(prompt).strip().lower() in {"y", "yes"}
@@ -757,14 +559,8 @@ def _run_first_run(namespace: argparse.Namespace) -> int:
     store = MemoryStore.from_env()
     report = build_first_run_report(
         store,
-        client=namespace.client,
         namespace=namespace.namespace,
         query=namespace.query,
-        python_path=namespace.python_path,
-        cwd=namespace.cwd,
-        bridge_home=namespace.bridge_home,
-        config_path=namespace.config_path,
-        example=namespace.example,
     )
     if namespace.format == "json":
         print(json.dumps(report, indent=2))
