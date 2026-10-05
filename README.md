@@ -27,6 +27,8 @@ pip install agent-memory-bridge
 
 Connecting a specific coding client is outside AMB Core. AMB does not discover, write, or certify Codex, Claude, Cursor, OpenCode, Hermes, Cline, VS Code, or Antigravity. Clients configure AMB as a standard MCP stdio server independently, pointing to the same local AMB home when they share project memory. See [Integrations](docs/INTEGRATIONS.md) for the generic installer and registration contract.
 
+If an existing bridge lives at `~/.codex/mem-bridge`, v0.36 does not open it automatically. Set `AGENT_MEMORY_BRIDGE_HOME` to that directory, or copy it to `~/.local/share/agent-memory-bridge`. The [configuration guide](docs/CONFIGURATION.md) has the exact cutover.
+
 ## Your project should not start over with every session
 
 A project is more than its current files. Over time, useful context gets scattered across repositories, chats, coding agents, reviews, fixes, and one-off decisions. A new session can see the code but still miss the reasons that make the project make sense.

@@ -12,7 +12,9 @@ This page is the canonical reference for **checked-in current-source facts**: im
 | Public tool-schema digest | `24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8` |
 | Runtime model | Default local stdio and optional standard Streamable HTTP over one host-local SQLite/WAL authority; FTS5 and optional embeddings are derived indexes |
 
-Current source test collection: `1228 tests`
+Current source test collection: `1230 tests`
+
+Default local home is `~/.local/share/agent-memory-bridge`. Current source does not discover `~/.codex/mem-bridge`. Set `AGENT_MEMORY_BRIDGE_HOME` to keep the old directory, or copy it to the neutral home. AMB does not migrate or delete it.
 
 > A tag is not a GitHub Release, and live CI or package-index state is not host certification, a distribution guarantee, or a productivity result. Installation guidance retains explicit publication and source-checkout gates.
 

@@ -50,6 +50,10 @@ Core local runtime settings.
 
 The sample config uses neutral defaults under `~/.local/share/agent-memory-bridge`.
 
+v0.36 does not discover an older home at `~/.codex/mem-bridge`. The directory is left where it is, and a new process does not open it.
+
+To keep using that directory, set `AGENT_MEMORY_BRIDGE_HOME` to its path before you start AMB. To move it, stop AMB and copy the directory to `~/.local/share/agent-memory-bridge`. AMB does not copy or delete the old directory for you, and it does not search a coding-client home to find it.
+
 ## `[security]` and `[signals]`
 
 The default profile is intended for one trusted local operator:

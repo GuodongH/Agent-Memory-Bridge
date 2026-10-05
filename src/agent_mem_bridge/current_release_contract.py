@@ -21,11 +21,10 @@ def run_current_source_release_contract_check(
     *,
     test_count_provider: Callable[[Path], int] | None = None,
 ) -> dict[str, Any]:
-    """Run the reusable release contract plus current-source release identity checks.
+    """Run the current-source release contract.
 
-    The long-lived release contract still knows how to validate historical proof
-    foundations. This wrapper makes the checked-out source line explicit without
-    turning each patch version into another hard-coded branch in that module.
+    Historical v0.19 and v0.20 host-adoption reports stay on
+    `run_historical_host_adoption_proof_check`. This gate does not read them.
     """
 
     from . import release_contract
@@ -36,6 +35,7 @@ def run_current_source_release_contract_check(
         project_root,
         test_count_provider=test_count_provider,
         enforce_current_source_identity=False,
+        include_host_adoption_proofs=False,
     )
 
     checks = [

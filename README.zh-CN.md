@@ -27,6 +27,8 @@ pip install agent-memory-bridge
 
 连接具体的编码客户端属于 AMB Core 范围之外。AMB 不会发现、写入或认证 Codex、Claude、Cursor、OpenCode、Hermes、Cline、VS Code 或 Antigravity。客户端独立将 AMB 配置为标准 MCP stdio 服务；共享项目记忆的客户端需要指向同一个本地 AMB home。通用安装与注册契约请见[集成文档](docs/INTEGRATIONS.md)。
 
+如果已有 bridge 位于 `~/.codex/mem-bridge`，v0.36 不会自动打开它。把 `AGENT_MEMORY_BRIDGE_HOME` 指到该目录，或把目录复制到 `~/.local/share/agent-memory-bridge`。具体切换见[配置说明](docs/CONFIGURATION.md)。
+
 ## 你的项目不该在每个新会话里重新开始
 
 一个项目远不只是当前那一份文件。随着时间推移，真正有用的上下文会散落在仓库、聊天、编码智能体、review、修复记录和一次次临时决策里。新会话也许能看到代码，却仍然不知道那些让项目成立的理由。

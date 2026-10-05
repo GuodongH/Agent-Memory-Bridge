@@ -197,7 +197,9 @@ def test_defaults_ignore_codex_home_and_legacy_bridge_directory(tmp_path: Path, 
     legacy = home / ".codex" / "mem-bridge"
     (legacy / "profile-source").mkdir(parents=True)
     (legacy / "config.toml").write_text("[bridge]\nhome = './should-not-load'\n", encoding="utf-8")
+    monkeypatch.setattr(bridge_paths.Path, "home", lambda: home)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
     for name in (
         "AGENT_MEMORY_BRIDGE_HOME",
