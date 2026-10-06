@@ -6,7 +6,7 @@ This page is the canonical reference for **checked-in current-source facts**: im
 
 | Field | Current fact |
 |---|---|
-| Package/source version | `0.35.0` |
+| Package/source version | `0.36.0` |
 | Durable schema | v12 |
 | Public MCP surface | Exactly 17 public MCP tools |
 | Public tool-schema digest | `24c5c52321d61b4b6f647c0d74e2d8304ca68716c403e08a274e9badfd8dc9f8` |
@@ -20,9 +20,11 @@ Default local home is `~/.local/share/agent-memory-bridge`. Current source does 
 
 ## Distribution Status
 
-The `0.32.1` source line introduced the release-side contract for PyPI distribution. Current source `0.35.0` uses the same publication route: a published GitHub Release whose tag matches `v<project.version>` can build and verify distributions, then publish through PyPI Trusted Publishing with GitHub OIDC. No PyPI API token is stored in the repository workflow. The container workflow builds and tests the immutable release-event SHA before GHCR publication. Live package/image availability is external state and is not asserted by this checked-in document.
+The `0.32.1` source line introduced the release-side contract for PyPI distribution. Current source `0.36.0` uses the same publication route: a published GitHub Release whose tag matches `v<project.version>` can build and verify distributions, then publish through PyPI Trusted Publishing with GitHub OIDC. No PyPI API token is stored in the repository workflow. The container workflow builds and tests the immutable release-event SHA before GHCR publication. Live package/image availability is external state and is not asserted by this checked-in document.
 
-The `0.35.0` source line packages Governed Lifecycle Activation: resolver-owned scope, optional host recall, bounded Stop review-candidate capture, configured remote recall authority, and a frozen live measurement contract. The [lifecycle release contract](evidence/v0.35.0-lifecycle/CONTRACT.md) binds completed evidence and its tested boundaries. The release identity/documentation changes do not add runtime behavior, schema, public tools, or automatic durable promotion.
+The `0.36.0` source line removes named-client harness adoption from AMB Core. It does not ship Codex or OpenCode adapters, the `setup` and `config` commands, or automatic discovery of `~/.codex/mem-bridge`. Schema remains v12 and the public MCP surface remains exactly 17 tools. Existing data is not migrated or deleted. Production NAS cutover remains a separate owner-approved operation.
+
+The historical `0.35.0` source line packaged Governed Lifecycle Activation: resolver-owned scope, optional host recall, bounded Stop review-candidate capture, configured remote recall authority, and a frozen live measurement contract. The [lifecycle release contract](evidence/v0.35.0-lifecycle/CONTRACT.md) binds completed evidence and its tested boundaries. The release identity/documentation changes do not add runtime behavior, schema, public tools, or automatic durable promotion.
 
 The `0.34.1` release is a portability/reliability patch on that remote-authority line. It keeps filesystem classification fail-closed on Windows and symlink-resolution loops, without changing durable schema v12, the 17-tool public MCP surface, or the no-automatic-learning boundary.
 
