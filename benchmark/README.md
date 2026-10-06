@@ -15,7 +15,6 @@ the engine gets more expressive.
 - `python ./scripts/run_classifier_calibration.py --fixture-gateway`
 - `python ./scripts/run_activation_stress_pack.py`
 - `python ./scripts/run_lifecycle_activation_benchmark.py check`
-- `python ./scripts/run_lifecycle_activation_benchmark.py prepare-host --host opencode --case-id known-project-gotcha --out /path/to/temp-dir`
 - `python ./scripts/run_task_memory_benchmark.py`
 - `python ./scripts/run_procedure_governance_benchmark.py`
 - `python ./scripts/run_signal_contention_benchmark.py`
@@ -25,12 +24,13 @@ the engine gets more expressive.
 - `python ./scripts/run_write_side_capture_benchmark.py`
 - `python ./scripts/run_review_workflow_benchmark.py`
 - `python ./scripts/run_task_brief_benchmark.py`
-- `python ./scripts/run_v019_adoption_proof.py`
-- `python ./scripts/run_v020_clean_room_proof.py`
 
 For the frozen lifecycle pack's isolated Codex HTTP condition, live evaluation
 and secondary-host rerun commands, see
 [Lifecycle activation live evaluation](lifecycle-activation-live-evaluation.md).
+Those host `prepare-host` and `collect-*` commands are historical measurement
+instructions. They are not current Core entry points, and current CI does not
+run them.
 The opt-in [Codex read-measurement revision](lifecycle-activation-codex-repo-read-v1.md)
 adds source-bound `rg` read evidence and full-cohort re-scoring while preserving
 the original v2 result and unchanged decision grader.
@@ -45,14 +45,15 @@ internally consistent cohort.
 - `benchmark/v0.19-fixture-manifest.json` is the planned `0.19` proof-breadth
   denominator. It names the 12 reviewed fixture cases before implementation so
   `0.19` cannot silently grow from proof work into new product surface.
-- `benchmark/latest-v0.19-adoption-proof-report.json` is the executable
-  snapshot for that denominator. It is a synthetic fixture proof for retrieval,
+- `benchmark/latest-v0.19-adoption-proof-report.json` is the frozen historical
+  snapshot for that denominator. It records a synthetic fixture proof for retrieval,
   Task Brief, and first-run guidance; it is not a claim of clean-room external
-  adoption.
-- `benchmark/latest-v0.20-clean-room-proof-report.json` is the executable
-  snapshot for the local clean-room adoption path. It launches the real stdio
+  adoption. Current source does not rerun it.
+- `benchmark/latest-v0.20-clean-room-proof-report.json` is the frozen historical
+  snapshot for the local clean-room adoption path. It recorded a real stdio
   entrypoint against a temp store, performs one demo `store -> recall`, renders
   first-run and Task Brief CLI reports, and keeps client config writes at zero.
+  Current source does not rerun it.
 
 ## What The Reports Cover
 

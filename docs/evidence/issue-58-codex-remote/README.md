@@ -1,5 +1,8 @@
 # Codex remote-authority acceptance
 
+This is historical v0.35 evidence. `scripts/check_codex_remote_authority.py`
+is preserved on tag `v0.35.0` and is not part of current Core.
+
 On 2026-10-03, Codex CLI 0.160.0 completed five isolated native
 UserPromptSubmit trials with `gpt-6-luna`: hit, deterministic skip, successful
 no-hit, unavailable authority, and conflicting local database. All five passed.

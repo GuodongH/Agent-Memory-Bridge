@@ -14,13 +14,6 @@ def _first_env(*names: str) -> str | None:
     return None
 
 
-def _default_codex_home() -> Path:
-    raw = os.environ.get("CODEX_HOME")
-    if raw:
-        return Path(raw).expanduser()
-    return Path.home() / ".codex"
-
-
 def _default_neutral_bridge_home() -> Path:
     return Path.home() / ".local" / "share" / "agent-memory-bridge"
 
@@ -30,39 +23,18 @@ def _default_neutral_config_root() -> Path:
 
 
 def _default_bridge_home() -> Path:
-    raw = _first_env("AGENT_MEMORY_BRIDGE_HOME")
-    if raw:
-        return Path(raw).expanduser()
-    neutral_home = _default_neutral_bridge_home()
-    legacy_codex_home = _default_codex_home() / "mem-bridge"
-    if neutral_home.exists():
-        return neutral_home
-    if legacy_codex_home.exists():
-        return legacy_codex_home
-    return neutral_home
+    return _default_neutral_bridge_home()
 
 
 def _default_profile_source_root() -> Path:
-    legacy_profile_source = _default_codex_home() / "mem-bridge" / "profile-source"
-    neutral_profile_source = _default_neutral_config_root() / "profile-source"
-    if neutral_profile_source.exists():
-        return neutral_profile_source
-    if legacy_profile_source.exists():
-        return legacy_profile_source
-    return neutral_profile_source
+    return _default_neutral_config_root() / "profile-source"
 
 
 def resolve_config_path() -> Path:
     raw = _first_env("AGENT_MEMORY_BRIDGE_CONFIG")
     if raw:
         return Path(raw).expanduser()
-    neutral_config = _default_neutral_config_root() / "config.toml"
-    legacy_config = _default_codex_home() / "mem-bridge" / "config.toml"
-    if neutral_config.is_file():
-        return neutral_config
-    if legacy_config.is_file():
-        return legacy_config
-    return neutral_config
+    return _default_neutral_config_root() / "config.toml"
 
 
 def _load_config() -> dict[str, Any]:
@@ -192,10 +164,6 @@ def _resolve_optional_env_str(*names: str) -> str | None:
         return None
     value = raw.strip()
     return value or None
-
-
-def resolve_codex_home() -> Path:
-    return _resolve_path("CODEX_HOME", ("codex", "home"), _default_codex_home)
 
 
 def resolve_bridge_home() -> Path:
@@ -554,49 +522,6 @@ def resolve_repository_snapshot_root() -> Path:
     )
 
 
-def resolve_watcher_enabled() -> bool:
-    return _resolve_bool(
-        "AGENT_MEMORY_BRIDGE_WATCHER_ENABLED",
-        ("watcher", "enabled"),
-        False,
-    )
-
-
-def resolve_watcher_legacy_memory_mode() -> bool:
-    return _resolve_bool(
-        "AGENT_MEMORY_BRIDGE_WATCHER_LEGACY_MEMORY_MODE",
-        ("watcher", "legacy_memory_mode"),
-        False,
-    )
-
-
-def resolve_watcher_state_path() -> Path:
-    return _resolve_path(
-        "AGENT_MEMORY_BRIDGE_STATE_PATH",
-        ("watcher", "state_path"),
-        lambda: resolve_bridge_home() / "watcher-state.json",
-        config_base_factory=resolve_bridge_home,
-    )
-
-
-def resolve_watcher_notes_root() -> Path:
-    return _resolve_path(
-        "AGENT_MEMORY_BRIDGE_NOTES_ROOT",
-        ("watcher", "notes_root"),
-        lambda: resolve_bridge_home() / "session-notes" / "auto",
-        config_base_factory=resolve_bridge_home,
-    )
-
-
-def resolve_watcher_log_dir() -> Path:
-    return _resolve_path(
-        "AGENT_MEMORY_BRIDGE_WATCHER_LOG_DIR",
-        ("watcher", "log_dir"),
-        lambda: resolve_bridge_home() / "watcher-logs",
-        config_base_factory=resolve_bridge_home,
-    )
-
-
 def resolve_reflex_state_path() -> Path:
     return _resolve_path(
         "AGENT_MEMORY_BRIDGE_REFLEX_STATE_PATH",
@@ -621,35 +546,6 @@ def resolve_governance_trigger_state_path() -> Path:
         ("governance", "trigger_state_path"),
         lambda: resolve_bridge_home() / "governance-trigger-state.json",
         config_base_factory=resolve_bridge_home,
-    )
-
-
-def resolve_sessions_root() -> Path:
-    return _resolve_path(
-        "AGENT_MEMORY_BRIDGE_SESSIONS_ROOT",
-        ("watcher", "sessions_root"),
-        lambda: resolve_codex_home() / "sessions",
-        config_base_factory=resolve_codex_home,
-    )
-
-
-def resolve_idle_seconds() -> int:
-    return _resolve_int("AGENT_MEMORY_BRIDGE_IDLE_SECONDS", ("watcher", "idle_seconds"), 60)
-
-
-def resolve_checkpoint_seconds() -> int:
-    return _resolve_int(
-        "AGENT_MEMORY_BRIDGE_CHECKPOINT_SECONDS",
-        ("watcher", "checkpoint_seconds"),
-        300,
-    )
-
-
-def resolve_checkpoint_min_messages() -> int:
-    return _resolve_int(
-        "AGENT_MEMORY_BRIDGE_CHECKPOINT_MIN_MESSAGES",
-        ("watcher", "checkpoint_min_messages"),
-        2,
     )
 
 

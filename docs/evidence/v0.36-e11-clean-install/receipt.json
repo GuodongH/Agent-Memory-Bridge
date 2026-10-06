@@ -1,0 +1,141 @@
+{
+  "failures": [],
+  "harness_probe": {
+    "filesystem_matches": [],
+    "names": [
+      "codex",
+      "opencode",
+      "claude",
+      "cursor",
+      "gemini",
+      "hermes",
+      "cline",
+      "antigravity",
+      "windsurf"
+    ],
+    "skipped_walk_directories": [
+      "dev",
+      "proc",
+      "run",
+      "sys"
+    ],
+    "which": {
+      "antigravity": null,
+      "claude": null,
+      "cline": null,
+      "codex": null,
+      "cursor": null,
+      "gemini": null,
+      "hermes": null,
+      "opencode": null,
+      "windsurf": null
+    }
+  },
+  "help": {
+    "args": [
+      "/usr/local/bin/python",
+      "-m",
+      "agent_mem_bridge",
+      "--help"
+    ],
+    "cwd": null,
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "usage: __main__.py [-h]\n                   {serve,service,project,bootstrap-repo,unbind-repo,first-run,inspect,explore,doctor,verify,index-health,index-rebuild,review-queue,review-workflow,task-brief,activation-receipt,lifecycle-hook,mint-verification-receipt,signal-repair,db-health,backup,verify-backup,restore,wal-checkpoint,signal-cleanup,consolidate-runs}\n                   ...\n\nAgent Memory Bridge CLI\n\npositional arguments:\n  {serve,service,project,bootstrap-repo,unbind-repo,first-run,inspect,explore,doctor,verify,index-health,index-rebuild,review-queue,review-workflow,task-brief,activation-receipt,lifecycle-hook,mint-verification-receipt,signal-repair,db-health,backup,verify-backup,restore,wal-checkpoint,signal-cleanup,consolidate-runs}\n    serve               Start the MCP server (stdio by default).\n    service             Run reflex and consolidation service loop.\n    project             Orchestrate project learning over existing bootstrap\n                        and Explore commands.\n    bootstrap-repo      Derive a bounded, commit-bound repository knowledge\n                        snapshot without changing memory.\n    unbind-repo         Remove one explicit local repository binding without\n                        deleting snapshots or memory.\n    first-run           Guide a read-only durable-memory loop without changing\n                        stored memory.\n    inspect             Explain governed task-memory selections and relevant\n                        exclusions without changing memory.\n    explore             Explore a bounded read-only projection of known\n                        project relationships.\n    doctor              Run non-invasive onboarding checks.\n    verify              Run isolated stdio or read-only remote HTTP checks.\n    index-health        Inspect derived FTS and embedding index health.\n    index-rebuild       Rebuild derived indexes without changing memory rows.\n    review-queue        Render a read-only operator review queue for staged\n                        and dispositioned memory records.\n    review-workflow     Render a proposal-only human workflow plan from the\n                        operator review queue.\n    task-brief          Render a read-only Task Brief from task memory, review\n                        queue, and active signals.\n    activation-receipt  Render a read-only cross-client activation receipt for\n                        a correlation id.\n    lifecycle-hook      Evaluate one optional lifecycle event from stdin.\n    mint-verification-receipt\n                        Mint one bounded human/operator governed-run\n                        verification receipt.\n    signal-repair       Explicitly reset one malformed claimed Signal to\n                        pending with an audit receipt.\n    db-health           Inspect SQLite integrity, foreign keys, persisted\n                        JSON/vector state, and capacity metrics.\n    backup              Create a consistent SQLite backup using the backup\n                        API.\n    verify-backup       Verify a backup without restoring it.\n    restore             Restore a verified backup to the configured database\n                        path.\n    wal-checkpoint      Run an explicit SQLite WAL checkpoint.\n    signal-cleanup      Preview or apply retention cleanup for old\n                        acknowledged and expired Signals.\n    consolidate-runs    Read completed run evidence and emit shadow-only\n                        lesson candidates.\n\noptions:\n  -h, --help            show this help message and exit\n"
+  },
+  "image": "python:3.12-slim",
+  "image_id": "sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d",
+  "installed_module": "/usr/local/lib/python3.12/site-packages/agent_mem_bridge/__init__.py",
+  "installed_paths_sha256": "77b130e0e7c83d1a47fa92bb9c4735a346ebd09454aaad98cb875ef04db6d553",
+  "installed_version": "0.35.0",
+  "legacy_home_created": false,
+  "neutral_home_created": true,
+  "project_init": {
+    "args": [
+      "/usr/local/bin/python",
+      "-m",
+      "agent_mem_bridge",
+      "project",
+      "init",
+      "--yes",
+      "."
+    ],
+    "cwd": "/tmp/e11-clean",
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "Project detected: e11-clean\nSuggested namespace: project:e11-clean\nChosen namespace: project:e11-clean\n\nInitialized project: e11-clean\nNamespace: project:e11-clean\n\nRepository WHAT initialized.\n\nPROJECT: e11-clean\n\nCODE / WHAT\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nPackage: e11-clean\nProject guidance: README.md\n\nCONVERSATION / WHY\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nNo project decisions or constraints have been explicitly stored yet.\n\nTell your connected coding agent:\n\n\"Remember that we decided X because Y.\"\n\nSTATUS\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nRepository snapshot is current at `14176929ded5829c28b0dc025f954ce97bf40b53`.\n3 code facts \u00b7 0 active decisions \u00b7 0 active constraints\n"
+  },
+  "project_resolve": {
+    "args": [
+      "/usr/local/bin/python",
+      "-m",
+      "agent_mem_bridge",
+      "project",
+      "resolve",
+      "."
+    ],
+    "cwd": "/tmp/e11-clean",
+    "exit_code": 0,
+    "stderr": "",
+    "stdout": "{\n  \"ambiguity\": null,\n  \"ignored_provenance_keys\": [],\n  \"namespace\": \"project:e11-clean\",\n  \"non_authority_inputs\": [\n    \"caller_tags\",\n    \"client_workspace\",\n    \"prompt_text\",\n    \"source_client\",\n    \"source_model\"\n  ],\n  \"repository_identity\": {\n    \"git_root\": \"/tmp/e11-clean\",\n    \"identity_basis\": \"root:/tmp/e11-clean|root:/tmp/e11-clean\",\n    \"local_repository_source_id\": \"05b0876eeddc39baacdf3c4eef1a6d6e\",\n    \"logical_repository_identity\": \"/tmp/e11-clean\",\n    \"remote_origin\": \"\",\n    \"repository_id\": \"05b0876eeddc39baacdf3c4eef1a6d6e\"\n  },\n  \"repository_what\": {\n    \"authority\": \"derived_repository\",\n    \"checkout_clean\": true,\n    \"eligible\": true,\n    \"head\": \"14176929ded5829c28b0dc025f954ce97bf40b53\",\n    \"reason\": \"git_commit\"\n  },\n  \"schema_version\": \"project.resolution.v1\",\n  \"status\": \"bound\"\n}\n"
+  },
+  "removed_commands": [
+    {
+      "args": [
+        "/usr/local/bin/python",
+        "-m",
+        "agent_mem_bridge",
+        "setup"
+      ],
+      "cwd": null,
+      "exit_code": 2,
+      "stderr": "usage: __main__.py [-h]\n                   {serve,service,project,bootstrap-repo,unbind-repo,first-run,inspect,explore,doctor,verify,index-health,index-rebuild,review-queue,review-workflow,task-brief,activation-receipt,lifecycle-hook,mint-verification-receipt,signal-repair,db-health,backup,verify-backup,restore,wal-checkpoint,signal-cleanup,consolidate-runs}\n                   ...\n__main__.py: error: argument command: invalid choice: 'setup' (choose from serve, service, project, bootstrap-repo, unbind-repo, first-run, inspect, explore, doctor, verify, index-health, index-rebuild, review-queue, review-workflow, task-brief, activation-receipt, lifecycle-hook, mint-verification-receipt, signal-repair, db-health, backup, verify-backup, restore, wal-checkpoint, signal-cleanup, consolidate-runs)\n",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "/usr/local/bin/python",
+        "-m",
+        "agent_mem_bridge",
+        "config"
+      ],
+      "cwd": null,
+      "exit_code": 2,
+      "stderr": "usage: __main__.py [-h]\n                   {serve,service,project,bootstrap-repo,unbind-repo,first-run,inspect,explore,doctor,verify,index-health,index-rebuild,review-queue,review-workflow,task-brief,activation-receipt,lifecycle-hook,mint-verification-receipt,signal-repair,db-health,backup,verify-backup,restore,wal-checkpoint,signal-cleanup,consolidate-runs}\n                   ...\n__main__.py: error: argument command: invalid choice: 'config' (choose from serve, service, project, bootstrap-repo, unbind-repo, first-run, inspect, explore, doctor, verify, index-health, index-rebuild, review-queue, review-workflow, task-brief, activation-receipt, lifecycle-hook, mint-verification-receipt, signal-repair, db-health, backup, verify-backup, restore, wal-checkpoint, signal-cleanup, consolidate-runs)\n",
+      "stdout": ""
+    }
+  ],
+  "schema": "amb.v0.36.e11-clean-install.v1",
+  "status": "PASS",
+  "stdio": {
+    "protocol_supported_versions": [
+      "2026-07-28"
+    ],
+    "recall_hit": true,
+    "server_exit_codes": [
+      0,
+      0
+    ],
+    "store_id_present": true,
+    "tool_count": 17,
+    "tool_names": [
+      "store",
+      "recall",
+      "browse",
+      "stats",
+      "forget",
+      "feedback",
+      "promote",
+      "annotate",
+      "revise",
+      "export",
+      "begin_run",
+      "record_run_event",
+      "get_run",
+      "complete_run",
+      "claim_signal",
+      "extend_signal_lease",
+      "ack_signal"
+    ]
+  }
+}

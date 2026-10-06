@@ -25,7 +25,9 @@
 pip install agent-memory-bridge
 ```
 
-**Install once; connect each coding client separately.** Installing the package does not register AMB with every coding agent. Each client you want to use must be configured to launch AMB as an MCP stdio server. Clients that should share memory need to use the same configured local AMB home.
+Connecting a specific coding client is outside AMB Core. AMB does not discover, write, or certify Codex, Claude, Cursor, OpenCode, Hermes, Cline, VS Code, or Antigravity. Clients configure AMB as a standard MCP stdio server independently, pointing to the same local AMB home when they share project memory. See [Integrations](docs/INTEGRATIONS.md) for the generic installer and registration contract.
+
+If an existing bridge lives at `~/.codex/mem-bridge`, v0.36 does not open it automatically. Set `AGENT_MEMORY_BRIDGE_HOME` to that directory, or copy it to `~/.local/share/agent-memory-bridge`. The [configuration guide](docs/CONFIGURATION.md) has the exact cutover.
 
 ## Your project should not start over with every session
 
@@ -50,11 +52,11 @@ Current package/source version: `0.35.0`.
 
 Published releases: see [GitHub Releases](https://github.com/zzhang82/Agent-Memory-Bridge/releases).
 
-The first win happens inside the coding agent, in a fresh session. CLI Explore/Inspect and `doctor`/`verify` are later checks, not that win.
+The product story is four steps: install AMB, initialize or resolve a project, run the generic MCP server, and use or inspect memory. Client connection stays outside Core.
 
 ### 1. Install AMB
 
-For the Quick Start, use a virtual environment so every coding client can point at one stable Python launcher. Replace `<venv-python>` with the Python executable inside `.amb-venv` for your operating system.
+Use a virtual environment so the MCP server points at one stable Python launcher. Replace `<venv-python>` with the Python executable inside `.amb-venv` for your operating system.
 
 ```bash
 python -m venv .amb-venv
@@ -67,53 +69,37 @@ For development or audit work against an exact source checkout, use:
 <venv-python> -m pip install -e .
 ```
 
-### 2. Connect the coding client you actually use
-
-Installation and client registration are separate. Preview the setup for one client first:
-
-```bash
-<venv-python> -m agent_mem_bridge setup --client <client>
-```
-
-`setup` is read-only by default: it detects or inspects only bounded client configuration locations and shows the exact AMB fragment or action it recommends. Use a supported client name such as `codex`, `claude-code`, `vscode`, `cursor`, `cline`, `opencode`, or another client listed in [Integrations](docs/INTEGRATIONS.md). Codex is the reference workflow.
-
-If the preview marks that client as eligible for safe automatic configuration, you can explicitly apply it after review:
-
-```bash
-<venv-python> -m agent_mem_bridge setup --client <client> --apply
-```
-
-Some clients remain preview/manual because AMB will not guess or rewrite an unsafe configuration format or path. In that case, copy the rendered fragment or follow the client-specific [Integration guide](docs/INTEGRATIONS.md). Repeat this step for every coding client you want to connect. To share the same project memory across clients, keep them pointed at the same configured `AGENT_MEMORY_BRIDGE_HOME`, then reload each client after registration.
-
-Connection is proven when the coding client itself lists AMB tools such as `store` and `recall`. `doctor` and `verify` do not prove that an external client loaded MCP config.
-
-### 3. Initialize the project
+### 2. Initialize or resolve the project
 
 ```bash
 <venv-python> -m agent_mem_bridge project init .
 ```
 
-Project Init detects the local Git repository, proposes a namespace such as `project:my-app`, and waits for confirmation. It then derives a current repository baseline. It does not automatically learn decisions.
+Project Init detects the local Git repository, proposes a namespace such as `project:my-app`, and waits for confirmation. It then derives a current repository baseline. It does not automatically learn decisions. Once bound, `project resolve .` can resolve the namespace for the checkout without reinitializing.
 
-### 4. Teach one real project decision
+### 3. Run the generic MCP server
 
-In the connected coding agent, teach a decision you actually made. For example:
+Run AMB as a standard MCP stdio server: command `<venv-python>`, arguments `-m agent_mem_bridge`, and a persistent `AGENT_MEMORY_BRIDGE_HOME` shared by any client accessing the project memory.
+
+How a client launches that process is outside Core. The command shape is in [Integrations](docs/INTEGRATIONS.md).
+
+Connection is verified when the client lists AMB's standard MCP tools such as `store` and `recall`. Health checks like `doctor` and `verify` test server prerequisites, not external client configuration loading.
+
+### 4. Use or inspect memory
+
+Teach an explicit project decision through the connected client using AMB's public `store` tool:
 
 > Remember that we merge pull requests only after CI is green on the target branch, because broken main blocked two releases this month.
 
-The connected agent uses AMB's public `store` tool to persist the explicit decision and reason. AMB does not infer a durable decision from the code or archive the whole conversation.
+The agent stores the explicit decision and reason under the project namespace. AMB does not infer decisions from code or archive conversational transcripts.
 
-Another valid example is a stack choice, such as staying local-first instead of adding Redis. The win is the decision plus reason, not any one technology.
-
-### 5. Close the session, then ask again in a fresh one
-
-End the first agent session completely. Open a new session against the same project, same client registration, and same AMB home. Ask a generic question:
+In a fresh session against the same project and AMB home, ask:
 
 > What is required before we merge a pull request?
 
-The first win is when the new session answers with the stored decision and reason because AMB recalled it. Seeing the same fact in CLI Explore or Inspect is useful review, not the success check.
+The new session answers with the stored decision and reason because AMB recalled it. Seeing the decision in CLI Explore or Inspect is useful review, not the success check.
 
-Exact Codex observation steps live in [First-win acceptance](docs/FIRST-WIN-ACCEPTANCE.md).
+Historical Codex observations from the v0.35 line are documented in [First-win acceptance](docs/FIRST-WIN-ACCEPTANCE.md).
 
 ## After the first win
 
@@ -165,7 +151,7 @@ Refreshing repository WHAT leaves durable project WHY unchanged. Explore is CLI-
 <venv-python> -m agent_mem_bridge first-run --namespace project:my-app --query "What should I remember?"
 ```
 
-Use health checks only when setup is uncertain. They do not prove that a coding client loaded MCP config:
+Use health checks only when the connection is uncertain. They do not prove that a coding client loaded MCP config:
 
 ```bash
 <venv-python> -m agent_mem_bridge doctor
@@ -176,9 +162,7 @@ Use health checks only when setup is uncertain. They do not prove that a coding 
 
 ## Integrations
 
-AMB works through local stdio MCP. Generic MCP clients are supported; Codex is the reference workflow; Claude Code, Claude Desktop, Cursor, and Cline are documented; and Antigravity, OpenCode, and Hermes have locally tested configuration paths.
-
-Integration labels are deliberately narrow and do not imply client certification. See [Integrations](docs/INTEGRATIONS.md) for current setup instructions and boundaries.
+AMB runs as a generic local stdio MCP server. Client connection is outside Core. The command shape, project initialization, lifecycle-hook input, and server checks are in [Integrations](docs/INTEGRATIONS.md).
 
 ## Why the memory stays trustworthy
 
@@ -207,12 +191,12 @@ It is not a transcript archive, a promise that an agent will remember everything
 
 | Read | For |
 |---|---|
-| [First-win acceptance](docs/FIRST-WIN-ACCEPTANCE.md) | Exact Codex first-win observation packet |
+| [First-win acceptance](docs/FIRST-WIN-ACCEPTANCE.md) | Historical Codex observation from the v0.35 line |
 | [Architecture](docs/ARCHITECTURE.md) | System shape and data flow |
 | [Authority model](docs/AUTHORITY-CONTRACT.md) | Durable authority, derived views, correction, and audit rules |
 | [Knowledge Explorer](docs/KNOWLEDGE-EXPLORER.md) | Human-first read-only project view |
 | [Production Status](docs/PRODUCTION-STATUS.md) | Current implementation facts, evidence, and known limits |
-| [Integrations](docs/INTEGRATIONS.md) | Client-specific local MCP setup |
+| [Integrations](docs/INTEGRATIONS.md) | Generic stdio MCP installer contract |
 | [Install for Agents](INSTALL_FOR_AGENTS.md) | Full install-to-first-success workflow |
 | [Configuration](docs/CONFIGURATION.md) | Complete configuration reference |
 | [Examples](examples/README.md) | Sanitized demos and artifacts |

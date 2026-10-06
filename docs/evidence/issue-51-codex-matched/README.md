@@ -1,5 +1,8 @@
 # Matched Codex lifecycle activation evidence
 
+This is historical v0.35 evidence. The collector command below is preserved on
+tag `v0.35.0` and is not a current Core entry point.
+
 The repaired source at `483c755e7299b96990b0a75f4363027c21138c47` completed
 all ten frozen v2 cases: **10 PASS / 0 FAIL / 0 INCONCLUSIVE**.
 `report.json` is the unchanged frozen grader output; `receipt.json` binds the

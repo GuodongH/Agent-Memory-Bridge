@@ -79,26 +79,6 @@ batch_size = 100
 max_batches_per_cycle = 5
 backlog_delay_seconds = 5
 
-# Optional rollout/session capture helpers.
-# Current watcher workflows are most mature around Codex-style rollout files,
-# but basic MCP bridge usage does not require them.
-[watcher]
-# Conservative default: the core service does not scrape Codex rollout logs
-# unless you explicitly opt in. Multi-runtime workflows should prefer AMB-native
-# candidates/signals and governance triggers over client-specific log watchers.
-enabled = false
-sessions_root = "sessions"
-notes_root = "session-notes/auto"
-state_path = "watcher-state.json"
-log_dir = "watcher-logs"
-idle_seconds = 60
-checkpoint_seconds = 300
-checkpoint_min_messages = 2
-# Temporary compatibility switch. Keep false to record metadata-only rollout
-# lifecycle rows in the run ledger; true restores the legacy summary memories
-# and session notes workflow.
-legacy_memory_mode = false
-
 [reflex]
 # Conservative default: automatic summaries are not promoted into visible
 # learn/gotcha rows by the always-on service unless explicitly enabled.

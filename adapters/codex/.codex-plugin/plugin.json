@@ -1,6 +1,0 @@
-{
-  "name": "amb-lifecycle",
-  "version": "0.1.0",
-  "description": "Optional AMB lifecycle activation for Codex. Does not add an MCP tool or durable authority.",
-  "license": "MIT"
-}

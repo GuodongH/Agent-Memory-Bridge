@@ -8,7 +8,7 @@ Primary docs:
 - README.md - product overview, Project Learning Quick Start, public MCP tools
 - INSTALL_FOR_AGENTS.md - agent-readable install protocol
 - llms-install.md - concise install path for coding agents
-- docs/INTEGRATIONS.md - client configuration examples
+- docs/INTEGRATIONS.md - generic installer and server contract
 - docs/CONFIGURATION.md - runtime, retrieval, receipt, and classifier configuration
 - docs/AUTHORITY-CONTRACT.md - source-of-truth and compiled-view rules
 - docs/CONTEXT-ASSEMBLY.md - startup/task context assembly model
@@ -98,9 +98,9 @@ The historical `v0.27.0` release-install archive was
 <venv-python> -m agent_mem_bridge verify
 ```
 
-Use that same interpreter for `setup`, `project init`, `project resolve`, `bootstrap-repo`, optional
-`first-run`, or `config`. See `llms-install.md` for the real client-config,
-Project Learning store contract, and registration steps. `first-run` is
+Use that same interpreter for `project init`, `project resolve`, `bootstrap-repo`, or optional
+`first-run`. See `llms-install.md` for the Project Learning store contract and
+registration steps. `first-run` is
 secondary guided memory help, not the modern Project Learning entrypoint.
 
 `uvx` is an optional shortcut, not a baseline requirement. See

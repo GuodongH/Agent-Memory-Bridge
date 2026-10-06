@@ -1,5 +1,7 @@
 # First-Win Acceptance Packet
 
+> **Historical Status**: This document records a historical Codex observation from the v0.35 line, not current onboarding. It describes an earlier manual observation procedure rather than current AMB Core setup.
+
 This packet is the human/client observation procedure for AMB's first win:
 teach one explicit project decision in a coding agent, then recall that
 decision from a genuinely fresh agent session.
@@ -17,9 +19,7 @@ It is not a CLI Explorer/Inspect walkthrough. It is not a claim that
 This worktree did not launch or control a fresh real Codex, Cursor, or
 Claude instance. Do not round **NOT RUN** up to PASS.
 
-Reference client: **Codex**. Codex remains the verified reference workflow
-in [Integrations](INTEGRATIONS.md). Cursor is documented, not the first-win
-canonical client.
+This procedure was written against a Codex session. It is a historical record, not a current reference-client promise.
 
 ## Non-claims
 
@@ -67,24 +67,12 @@ evaluates the unreleased v0.33 candidate from the current checkout:
 The last published package remains `agent-memory-bridge==0.32.2`. Do not
 treat that PyPI pin as this source.
 
-### 3. Render / preview client config
+### 3. Register Codex by hand
 
-```bash
-<venv-python> -m agent_mem_bridge setup --client codex
-```
-
-`setup` is read-only by default. Confirm the rendered fragment points at
-`<venv-python> -m agent_mem_bridge` and the same persistent
-`AGENT_MEMORY_BRIDGE_HOME`.
-
-If the preview marks Codex eligible for safe automatic configuration:
-
-```bash
-<venv-python> -m agent_mem_bridge setup --client codex --apply
-```
-
-Otherwise copy the fragment into Codex `config.toml` using the shape in
-[Integrations](INTEGRATIONS.md). Reload Codex after registration.
+AMB does not write Codex config. Add the stdio server from
+[Integrations](INTEGRATIONS.md): command `<venv-python>`, arguments
+`-m agent_mem_bridge`, and the same persistent `AGENT_MEMORY_BRIDGE_HOME`.
+Reload Codex after registration.
 
 ### 4. Connect
 
@@ -192,7 +180,7 @@ Current observation:
 
 ```text
 Date: unrun in this worktree
-Client / version: Codex (reference, not launched here)
+Client / version: Codex (historical procedure, not launched here)
 Result: NOT RUN
 Notes: Automated stdio proof exists; no live Codex/Cursor/Claude instance was controlled.
 ```

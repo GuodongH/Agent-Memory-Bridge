@@ -12,11 +12,10 @@ from .archive_snapshot import (
     load_manifest_relative_paths,
 )
 from .index_health import inspect_indexes
-from .paths import resolve_bridge_db_path, resolve_bridge_home, resolve_bridge_log_dir, resolve_sessions_root
+from .paths import resolve_bridge_db_path, resolve_bridge_home, resolve_bridge_log_dir
 from .profile_migration import build_profile_documents, compare_profile_migration_with_mode
 from .stdio_probe import run_dual_stdio_probe
 from .storage import MemoryStore
-from .watcher_health import run_watcher_health_check
 
 RECALL_CHECK_LIMIT = 4
 
@@ -37,7 +36,6 @@ def run_health_check(
     recall_checks = _run_recall_checks(store, source_root, resolved_compare_mode)
     with store._connect() as conn:
         index_health = inspect_indexes(conn)
-    watcher_health = run_watcher_health_check(resolve_sessions_root())
     relation_metadata_smoke = run_relation_metadata_smoke(resolve_bridge_home())
 
     stdio_smoke: dict[str, Any] | None = None
@@ -57,7 +55,6 @@ def run_health_check(
         and all(item["ok"] for item in recall_checks)
         and bool(index_health["fts"]["healthy"])
         and bool(relation_metadata_smoke.get("ok"))
-        and bool(watcher_health.get("ok"))
         and (stdio_smoke is None or bool(stdio_smoke.get("ok")))
     )
     return {
@@ -71,7 +68,6 @@ def run_health_check(
         "recall_checks": recall_checks,
         "index_health": index_health,
         "relation_metadata_smoke": relation_metadata_smoke,
-        "watcher_health": watcher_health,
         "stdio_smoke": stdio_smoke,
     }
 

@@ -19,6 +19,16 @@ def test_onboarding_contract_repository_passes() -> None:
     root = Path(__file__).resolve().parents[1]
     report = run_onboarding_contract_check(root)
     assert report["ok"] is True, json.dumps(report, indent=2, ensure_ascii=False)
+    check_names = {check["name"] for check in report["checks"]}
+    assert {
+        "required_onboarding_docs_exist",
+        "readme_links_integrations_doc",
+        "onboarding_docs_stay_placeholder_safe",
+        "first_use_memory_loop_contract_is_explicit",
+        "versioned_install_tool_surface_is_explicit",
+    } <= check_names
+    assert "generated_example_configs_parse_and_stay_sanitized" not in check_names
+    assert "safe_setup_apply_contract_is_explicit" not in check_names
 
     package_version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     release_install_archive_ref = f"archive/refs/tags/v{PINNED_INSTALL_VERSION}.zip"

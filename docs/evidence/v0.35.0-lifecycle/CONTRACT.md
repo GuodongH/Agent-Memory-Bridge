@@ -37,7 +37,8 @@ Codex CLI 0.160.0 / `gpt-6-luna` / `adapter_enabled` / `remote_loopback` /
 210-second outer timeout, two-case parallelism and the same required
 isolation contract. The original CLI and `codex-cohort-v1` remain frozen;
 the separate repaired collector is
-`scripts/run_codex_lifecycle_activation_benchmark.py`.
+`scripts/run_codex_lifecycle_activation_benchmark.py` on tag `v0.35.0`.
+Current Core does not ship that collector.
 
 Chronology is immutable:
 

@@ -59,40 +59,17 @@ the config.
 ## Connect One Client
 
 Installing AMB and registering it with a coding client are separate steps.
-Preview the target client's setup first:
-
-```text
-<venv-python> -m agent_mem_bridge setup --client <client>
-```
-
-`setup` is read-only by default. If the preview explicitly classifies the target
-as safe for automatic configuration, the human can approve:
-
-```text
-<venv-python> -m agent_mem_bridge setup --client <client> --apply
-```
-
-Some clients remain preview/manual by design. In that case use
-[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the current config shape and
-render the exact fragment instead of guessing a config path or serializer.
+Connecting a specific coding client is outside AMB Core; AMB does not write client MCP configuration. Use
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the generic command shape and installer contract.
 Set the stdio command to the derived venv interpreter and the arguments to:
 
 ```json
 ["-m", "agent_mem_bridge"]
 ```
 
-Supported renderer names are `generic`, `codex`, `claude-desktop`,
-`claude-code`, `vscode`, `cursor`, `cline`, `antigravity`, `opencode`, and
-`hermes`. Every client that should share project memory must use the same
-user-chosen persistent `AGENT_MEMORY_BRIDGE_HOME`. Render one real fragment for
-the target client when manual configuration is required:
-
-```text
-<venv-python> -m agent_mem_bridge config --client <client> --python "<venv-python>" --cwd "<absolute-path-to-your-project>" --bridge-home "<absolute-path-to-one-persistent-bridge-home>"
-```
-
-The default config path in the generated fragment is optional for this baseline.
-If no such `config.toml` exists, `doctor` may warn and the baseline server can
+Every client that should share project memory must use the same user-chosen
+persistent `AGENT_MEMORY_BRIDGE_HOME`. An optional bridge `config.toml` is not
+required for this baseline. If no such file exists, `doctor` may warn and the baseline server can
 still run. Restart or reload the client, then use its own MCP status/tool view
 to confirm the server connects and exposes the documented 17-tool public
 surface. That client registration check is the gate that proves the config was

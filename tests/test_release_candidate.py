@@ -171,6 +171,49 @@ def test_historical_v0274_evidence_remains_historical() -> None:
     assert "v0.28.0 candidate" not in changelog
 
 
+_HISTORICAL_HOST_ADOPTION_REPORTS = (
+    "latest-v0.19-adoption-proof-report.json",
+    "latest-v0.20-clean-room-proof-report.json",
+)
+
+
+def test_current_source_gate_does_not_read_historical_host_adoption_reports(monkeypatch) -> None:
+    """The canonical current-source gate must not open v0.19 or v0.20 host proofs."""
+
+    read_names: list[str] = []
+    original_read_text = Path.read_text
+
+    def spy(self: Path, *args, **kwargs) -> str:
+        read_names.append(self.name)
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", spy)
+    counts = release_contract.extract_current_test_counts(
+        (ROOT / "docs" / "PRODUCTION-STATUS.md").read_text(encoding="utf-8")
+    )
+    assert len(counts) == 1
+    report = run_current_source_release_contract_check(ROOT, test_count_provider=lambda _root: counts[0])
+
+    failed = [check["name"] for check in report["checks"] if not check["ok"]]
+    assert report["ok"], failed
+    assert set(_HISTORICAL_HOST_ADOPTION_REPORTS).isdisjoint(read_names)
+    assert "v020_proof_version_matches_pyproject" not in {check["name"] for check in report["checks"]}
+
+
+def test_historical_host_adoption_validator_fails_closed_without_its_reports(tmp_path: Path) -> None:
+    """Historical proof checking remains available and is not a current Core gate."""
+
+    present = release_contract.run_historical_host_adoption_proof_check(ROOT)
+    assert present["historical_only"] is True
+    assert present["required_by_current_core_gate"] is False
+    assert present["ok"] is True
+
+    missing = release_contract.run_historical_host_adoption_proof_check(tmp_path)
+    assert missing["required_by_current_core_gate"] is False
+    assert missing["ok"] is False
+    assert set(_HISTORICAL_HOST_ADOPTION_REPORTS) <= {item["field"] for item in missing["mismatches"]}
+
+
 def test_install_guides_use_publication_invariant_routes() -> None:
     for name in ("INSTALL_FOR_AGENTS.md", "llms-install.md", "llms.txt", "docs/INTEGRATIONS.md"):
         text = (ROOT / name).read_text(encoding="utf-8")
@@ -360,13 +403,8 @@ def test_v0274_compatible_schema12_database_remains_readable(tmp_path: Path, mon
     assert any(item["id"] == "legacy-memory" for item in recall["items"])
     first_run = build_first_run_report(
         store,
-        client="generic",
         namespace="project:bridge",
         query="byte-for-byte stable",
-        python_path=None,
-        cwd=None,
-        bridge_home=None,
-        config_path=None,
     )
     assert first_run["schema"] == "memory.first_run.v2"
     inspect = build_memory_inspect_report(store, namespace="project:bridge", query="byte-for-byte stable")

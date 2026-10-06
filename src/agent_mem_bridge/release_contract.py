@@ -229,6 +229,7 @@ def run_release_contract_check(
     *,
     test_count_provider: Callable[[Path], int] | None = None,
     enforce_current_source_identity: bool = False,
+    include_host_adoption_proofs: bool = True,
 ) -> dict[str, Any]:
     project_root = root.resolve()
     readme_paths = [project_root / name for name in README_NAMES if (project_root / name).exists()]
@@ -236,7 +237,10 @@ def run_release_contract_check(
         raise FileNotFoundError("No release README files found.")
 
     pyproject_version = load_pyproject_version(project_root / "pyproject.toml")
-    expected_facts = load_expected_facts(project_root)
+    expected_facts = load_expected_facts(
+        project_root,
+        include_host_adoption_proofs=include_host_adoption_proofs,
+    )
     current_status_path = project_root / "docs" / "PRODUCTION-STATUS.md"
     main_readme_path = project_root / "README.md"
     main_readme_text = main_readme_path.read_text(encoding="utf-8")
@@ -262,7 +266,13 @@ def run_release_contract_check(
             expected_facts=expected_facts,
         )
     )
-    checks.append(build_release_proof_check(project_root, pyproject_version))
+    proof_check = build_release_proof_check(
+        project_root,
+        pyproject_version,
+        include_host_adoption_proofs=include_host_adoption_proofs,
+    )
+    if proof_check is not None:
+        checks.append(proof_check)
     checks.append(
         build_test_count_check(
             evidence_paths=[current_status_path],
@@ -445,7 +455,12 @@ def build_v020_proof_version_check(project_root: Path, pyproject_version: str) -
     }
 
 
-def build_release_proof_check(project_root: Path, pyproject_version: str) -> dict[str, Any]:
+def build_release_proof_check(
+    project_root: Path,
+    pyproject_version: str,
+    *,
+    include_host_adoption_proofs: bool = True,
+) -> dict[str, Any] | None:
     if pyproject_version == CURRENT_SOURCE_RELEASE:
         result = build_v027_episode_release_check(project_root, V027_EPISODE_RELEASE)
         result["name"] = "historical_v027_episode_contract_retained_for_v028_candidate"
@@ -455,6 +470,8 @@ def build_release_proof_check(project_root: Path, pyproject_version: str) -> dic
         return build_v027_episode_release_check(project_root, pyproject_version)
     if uses_v021_governed_change_foundation(pyproject_version):
         return build_v021_governed_change_proof_check(project_root, pyproject_version)
+    if not include_host_adoption_proofs:
+        return None
     return build_v020_proof_version_check(project_root, pyproject_version)
 
 
@@ -571,15 +588,6 @@ def build_v027_episode_release_check(
             "test_governed_receipt_is_required_and_evaluator_mismatch_is_atomic",
             "test_governed_typed_events_preflight_blocked_resume_and_cas_replay",
             "test_operator_cli_mints_receipt_and_database_inverse_regression_guard",
-        ),
-        "tests/test_watcher.py": (
-            "test_default_watcher_pauses_an_idle_rollout_without_completing_it",
-            "test_default_watcher_completes_only_after_an_explicit_host_close",
-            "test_default_watcher_creates_an_explicit_continuation_after_terminal_growth",
-        ),
-        "tests/test_codex_rollout.py": (
-            "test_incremental_rollout_scan_reads_only_appended_bytes_and_keeps_bodies_out_of_cursor",
-            "test_incremental_rollout_scan_detects_explicit_close_and_declared_goal_metadata",
         ),
         "tests/test_mcp_raw_wire.py": (
             "test_raw_wire_modern_and_legacy_contracts",
@@ -781,9 +789,9 @@ def build_fact_check(fact_paths: list[Path], expected_facts: dict[str, int | flo
         + REQUIRED_REVIEW_QUEUE_KEYS
         + REQUIRED_REVIEW_WORKFLOW_KEYS
         + REQUIRED_TASK_BRIEF_KEYS
-        + REQUIRED_V019_ADOPTION_PROOF_KEYS
-        + REQUIRED_V020_CLEAN_ROOM_PROOF_KEYS
         + tuple(key for key in REQUIRED_V021_GOVERNED_CHANGE_KEYS if key in expected_facts)
+        + tuple(key for key in REQUIRED_V019_ADOPTION_PROOF_KEYS if key in expected_facts)
+        + tuple(key for key in REQUIRED_V020_CLEAN_ROOM_PROOF_KEYS if key in expected_facts)
     )
     mismatches: list[dict[str, Any]] = []
     ok = True
@@ -1545,7 +1553,11 @@ def load_pyproject_version(path: Path) -> str:
     return str(data["project"]["version"])
 
 
-def load_expected_facts(project_root: Path) -> dict[str, int | float | bool]:
+def load_expected_facts(
+    project_root: Path,
+    *,
+    include_host_adoption_proofs: bool = True,
+) -> dict[str, int | float | bool]:
     benchmark_report = json.loads((project_root / "benchmark" / "latest-report.json").read_text(encoding="utf-8"))
     calibration_report = json.loads(
         (project_root / "benchmark" / "latest-calibration-report.json").read_text(encoding="utf-8")
@@ -1571,12 +1583,6 @@ def load_expected_facts(project_root: Path) -> dict[str, int | float | bool]:
     task_brief_report = json.loads(
         (project_root / "benchmark" / "latest-task-brief-report.json").read_text(encoding="utf-8")
     )
-    v019_report = json.loads(
-        (project_root / "benchmark" / "latest-v0.19-adoption-proof-report.json").read_text(encoding="utf-8")
-    )
-    v020_report = json.loads(
-        (project_root / "benchmark" / "latest-v0.20-clean-room-proof-report.json").read_text(encoding="utf-8")
-    )
     v021_report_path = project_root / "benchmark" / V021_GOVERNED_CHANGE_REPORT
     v021_report = json.loads(v021_report_path.read_text(encoding="utf-8")) if v021_report_path.exists() else None
     benchmark_summary = benchmark_report["summary"]
@@ -1588,8 +1594,6 @@ def load_expected_facts(project_root: Path) -> dict[str, int | float | bool]:
     review_queue_summary = review_queue_report["summary"]
     review_workflow_summary = review_workflow_report["summary"]
     task_brief_summary = task_brief_report["summary"]
-    v019_summary = v019_report["summary"]
-    v020_summary = v020_report["summary"]
     expected: dict[str, int | float | bool] = {}
     for key in REQUIRED_BENCHMARK_KEYS:
         expected[key] = benchmark_summary[key]
@@ -1621,10 +1625,8 @@ def load_expected_facts(project_root: Path) -> dict[str, int | float | bool]:
         expected[key] = review_workflow_summary[key]
     for key in REQUIRED_TASK_BRIEF_KEYS:
         expected[key] = task_brief_summary[key]
-    for key in REQUIRED_V019_ADOPTION_PROOF_KEYS:
-        expected[key] = v019_summary[key]
-    for key in REQUIRED_V020_CLEAN_ROOM_PROOF_KEYS:
-        expected[key] = v020_summary[key]
+    if include_host_adoption_proofs:
+        expected.update(load_historical_host_adoption_facts(project_root))
     if v021_report is not None:
         v021_summary = v021_report["summary"]
         v021_boundaries = v021_report["boundaries"]
@@ -1647,6 +1649,61 @@ def load_expected_facts(project_root: Path) -> dict[str, int | float | bool]:
             }
         )
     return expected
+
+
+def load_historical_host_adoption_facts(project_root: Path) -> dict[str, int | float | bool]:
+    """Read the frozen v0.19 and v0.20 proof reports. Not part of the current Core gate."""
+
+    v019_summary = json.loads(
+        (project_root / "benchmark" / "latest-v0.19-adoption-proof-report.json").read_text(encoding="utf-8")
+    )["summary"]
+    v020_summary = json.loads(
+        (project_root / "benchmark" / "latest-v0.20-clean-room-proof-report.json").read_text(encoding="utf-8")
+    )["summary"]
+    facts: dict[str, int | float | bool] = {}
+    for key in REQUIRED_V019_ADOPTION_PROOF_KEYS:
+        facts[key] = v019_summary[key]
+    for key in REQUIRED_V020_CLEAN_ROOM_PROOF_KEYS:
+        facts[key] = v020_summary[key]
+    return facts
+
+
+def run_historical_host_adoption_proof_check(project_root: Path) -> dict[str, Any]:
+    """Validate historical adoption reports without making them a current release gate."""
+
+    root = project_root.resolve()
+    mismatches: list[dict[str, Any]] = []
+    reports = (
+        root / "benchmark" / "latest-v0.19-adoption-proof-report.json",
+        root / "benchmark" / "latest-v0.20-clean-room-proof-report.json",
+    )
+    for path in reports:
+        if not path.is_file():
+            mismatches.append({"field": path.name, "expected": "present", "actual": "missing"})
+    facts: dict[str, int | float | bool] = {}
+    if not mismatches:
+        try:
+            facts = load_historical_host_adoption_facts(root)
+        except (OSError, KeyError, json.JSONDecodeError, TypeError) as exc:
+            mismatches.append(
+                {"field": "historical_reports", "expected": "readable summaries", "actual": type(exc).__name__}
+            )
+    status_path = root / "docs" / "PRODUCTION-STATUS.md"
+    if facts and status_path.is_file():
+        recorded = extract_key_values(status_path.read_text(encoding="utf-8"))
+        for key, expected_value in facts.items():
+            actual_values = recorded.get(key, [])
+            if not actual_values or any(value != expected_value for value in actual_values):
+                mismatches.append(
+                    {"field": key, "expected": expected_value, "actual": actual_values, "path": str(status_path)}
+                )
+    return {
+        "name": "historical_v019_v020_host_adoption_proofs",
+        "ok": not mismatches,
+        "historical_only": True,
+        "required_by_current_core_gate": False,
+        "mismatches": mismatches,
+    }
 
 
 def extract_key_values(text: str) -> dict[str, list[int | float | bool]]:

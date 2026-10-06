@@ -2,10 +2,12 @@ from pathlib import Path
 
 import pytest
 
+import agent_mem_bridge.paths as bridge_paths
 from agent_mem_bridge.paths import (
     resolve_bridge_db_path,
     resolve_bridge_home,
     resolve_classifier_trusted_shell,
+    resolve_config_path,
     resolve_consolidation_allow_reflex_sources,
     resolve_consolidation_enabled,
     resolve_embedding_capability,
@@ -19,19 +21,15 @@ from agent_mem_bridge.paths import (
     resolve_embedding_scheduler_state_path,
     resolve_embedding_timeout_seconds,
     resolve_embedding_trusted_shell,
-    resolve_idle_seconds,
     resolve_operating_profile,
     resolve_poll_seconds,
     resolve_profile_namespace,
     resolve_profile_source_root,
     resolve_reflex_enabled,
     resolve_require_claim_before_ack,
-    resolve_sessions_root,
     resolve_telemetry_log_dir,
     resolve_telemetry_mode,
     resolve_telemetry_service_name,
-    resolve_watcher_enabled,
-    resolve_watcher_legacy_memory_mode,
 )
 
 
@@ -60,9 +58,6 @@ def test_path_resolvers_read_from_config_file(tmp_path: Path, monkeypatch) -> No
     config_path.write_text(
         "\n".join(
             [
-                "[codex]",
-                'home = "./codex-home"',
-                "",
                 "[profile]",
                 'source_root = "./remote-cole"',
                 'namespace = "global"',
@@ -94,11 +89,6 @@ def test_path_resolvers_read_from_config_file(tmp_path: Path, monkeypatch) -> No
                 "enabled = true",
                 "allow_reflex_sources = true",
                 "",
-                "[watcher]",
-                "enabled = true",
-                'sessions_root = "./sessions"',
-                "idle_seconds = 45",
-                "",
                 "[service]",
                 "poll_seconds = 12.5",
                 "",
@@ -114,8 +104,6 @@ def test_path_resolvers_read_from_config_file(tmp_path: Path, monkeypatch) -> No
     monkeypatch.delenv("AGENT_MEMORY_BRIDGE_DB_PATH", raising=False)
     monkeypatch.delenv("AGENT_MEMORY_BRIDGE_PROFILE_SOURCE_ROOT", raising=False)
     monkeypatch.delenv("COLE_SOURCE_ROOT", raising=False)
-    monkeypatch.delenv("AGENT_MEMORY_BRIDGE_SESSIONS_ROOT", raising=False)
-    monkeypatch.delenv("AGENT_MEMORY_BRIDGE_IDLE_SECONDS", raising=False)
     monkeypatch.delenv("AGENT_MEMORY_BRIDGE_POLL_SECONDS", raising=False)
 
     assert resolve_profile_source_root() == tmp_path / "remote-cole"
@@ -137,10 +125,7 @@ def test_path_resolvers_read_from_config_file(tmp_path: Path, monkeypatch) -> No
     assert resolve_embedding_scheduler_batch_size() == 7
     assert resolve_consolidation_enabled() is True
     assert resolve_consolidation_allow_reflex_sources() is True
-    assert resolve_watcher_enabled() is True
-    assert resolve_sessions_root() == tmp_path / "codex-home" / "sessions"
     assert resolve_reflex_enabled() is True
-    assert resolve_idle_seconds() == 45
     assert resolve_poll_seconds() == 12.5
 
 
@@ -151,9 +136,6 @@ def test_env_overrides_config_values(tmp_path: Path, monkeypatch) -> None:
             [
                 "[bridge]",
                 'home = "./bridge-home"',
-                "",
-                "[watcher]",
-                "idle_seconds = 45",
             ]
         ),
         encoding="utf-8",
@@ -161,7 +143,6 @@ def test_env_overrides_config_values(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_CONFIG", str(config_path))
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_HOME", str(tmp_path / "env-home"))
-    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_IDLE_SECONDS", "90")
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_PROFILE_SOURCE_ROOT", str(tmp_path / "env-cole"))
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_TELEMETRY_MODE", "jsonl")
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_TELEMETRY_SERVICE_NAME", "amb-env")
@@ -172,12 +153,10 @@ def test_env_overrides_config_values(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_EMBEDDING_SCHEDULER_ENABLED", "yes")
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_EMBEDDING_SCHEDULER_INTERVAL_SECONDS", "25")
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_EMBEDDING_SCHEDULER_BATCH_SIZE", "3")
-    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_WATCHER_ENABLED", "yes")
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_REFLEX_ENABLED", "yes")
 
     assert resolve_profile_source_root() == tmp_path / "env-cole"
     assert resolve_bridge_home() == tmp_path / "env-home"
-    assert resolve_idle_seconds() == 90
     assert resolve_telemetry_mode() == "jsonl"
     assert resolve_telemetry_service_name() == "amb-env"
     assert resolve_embedding_provider() == "hash"
@@ -188,7 +167,6 @@ def test_env_overrides_config_values(tmp_path: Path, monkeypatch) -> None:
     assert resolve_embedding_scheduler_state_path() == tmp_path / "env-home" / "embedding-sidecar-state.json"
     assert resolve_embedding_scheduler_interval_seconds() == 25
     assert resolve_embedding_scheduler_batch_size() == 3
-    assert resolve_watcher_enabled() is True
     assert resolve_reflex_enabled() is True
 
 
@@ -197,30 +175,9 @@ def test_service_automation_defaults_to_conservative_disabled(tmp_path: Path, mo
     config_path.write_text("[bridge]\nhome = './bridge-home'\n", encoding="utf-8")
 
     monkeypatch.setenv("AGENT_MEMORY_BRIDGE_CONFIG", str(config_path))
-    monkeypatch.delenv("AGENT_MEMORY_BRIDGE_WATCHER_ENABLED", raising=False)
     monkeypatch.delenv("AGENT_MEMORY_BRIDGE_REFLEX_ENABLED", raising=False)
 
-    assert resolve_watcher_enabled() is False
     assert resolve_reflex_enabled() is False
-
-
-def test_watcher_legacy_memory_mode_resolves_config_and_environment(tmp_path: Path, monkeypatch) -> None:
-    config_path = tmp_path / "config.toml"
-    config_path.write_text("[watcher]\nlegacy_memory_mode = true\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_CONFIG", str(config_path))
-    monkeypatch.delenv("AGENT_MEMORY_BRIDGE_WATCHER_LEGACY_MEMORY_MODE", raising=False)
-
-    assert resolve_watcher_legacy_memory_mode() is True
-
-    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_WATCHER_LEGACY_MEMORY_MODE", "false")
-    assert resolve_watcher_legacy_memory_mode() is False
-
-    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_WATCHER_LEGACY_MEMORY_MODE", "true")
-    assert resolve_watcher_legacy_memory_mode() is True
-
-    config_path.write_text("[watcher]\n", encoding="utf-8")
-    monkeypatch.delenv("AGENT_MEMORY_BRIDGE_WATCHER_LEGACY_MEMORY_MODE", raising=False)
-    assert resolve_watcher_legacy_memory_mode() is False
 
 
 def test_profile_source_root_defaults_to_neutral_config_path(tmp_path: Path, monkeypatch) -> None:
@@ -233,3 +190,26 @@ def test_profile_source_root_defaults_to_neutral_config_path(tmp_path: Path, mon
     monkeypatch.delenv("COLE_SOURCE_ROOT", raising=False)
 
     assert resolve_profile_source_root() == Path.home() / ".config" / "agent-memory-bridge" / "profile-source"
+
+
+def test_defaults_ignore_codex_home_and_legacy_bridge_directory(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    legacy = home / ".codex" / "mem-bridge"
+    (legacy / "profile-source").mkdir(parents=True)
+    (legacy / "config.toml").write_text("[bridge]\nhome = './should-not-load'\n", encoding="utf-8")
+    monkeypatch.setattr(bridge_paths.Path, "home", lambda: home)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    for name in (
+        "AGENT_MEMORY_BRIDGE_HOME",
+        "AGENT_MEMORY_BRIDGE_CONFIG",
+        "AGENT_MEMORY_BRIDGE_PROFILE_SOURCE_ROOT",
+        "COLE_SOURCE_ROOT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    assert resolve_bridge_home() == home / ".local" / "share" / "agent-memory-bridge"
+    assert resolve_config_path() == home / ".config" / "agent-memory-bridge" / "config.toml"
+    assert resolve_profile_source_root() == home / ".config" / "agent-memory-bridge" / "profile-source"
+    assert not hasattr(bridge_paths, "resolve_codex_home")

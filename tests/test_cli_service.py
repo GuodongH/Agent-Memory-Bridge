@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import multiprocessing
-import runpy
 import tomllib
 from pathlib import Path
 
@@ -31,7 +30,7 @@ def test_cli_service_once_requests_single_cycle(monkeypatch) -> None:
         allow_multiple_services: bool = False,
     ) -> dict[str, dict[str, object]]:
         calls.append((once, allow_multiple_services))
-        return {"watcher": {"status": "ok"}}
+        return {"reflex": {"status": "ok"}}
 
     monkeypatch.setattr(service_module, "run_service", fake_run_service)
 
@@ -57,49 +56,6 @@ def test_cli_service_without_once_preserves_loop_mode(monkeypatch) -> None:
 
     assert exit_code == 0
     assert calls == [(False, False)]
-
-
-def test_watch_codex_sessions_script_uses_watcher_resolvers(monkeypatch, capsys, tmp_path: Path) -> None:
-    module = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts" / "watch_codex_sessions.py"))
-    watcher_configs: list[object] = []
-
-    class FakeWatcher:
-        def __init__(self, config) -> None:
-            watcher_configs.append(config)
-
-        def run_once(self) -> dict[str, object]:
-            return {"processed_count": 0, "processed": []}
-
-    main = module["main"]
-    assert callable(main)
-    resolver_values = {
-        "resolve_bridge_db_path": tmp_path / "bridge.db",
-        "resolve_bridge_home": tmp_path / "runtime",
-        "resolve_checkpoint_min_messages": 7,
-        "resolve_checkpoint_seconds": 19,
-        "resolve_idle_seconds": 11,
-        "resolve_poll_seconds": 3.0,
-        "resolve_sessions_root": tmp_path / "sessions",
-        "resolve_watcher_legacy_memory_mode": True,
-        "resolve_watcher_log_dir": tmp_path / "watcher-logs",
-        "resolve_watcher_notes_root": tmp_path / "notes",
-        "resolve_watcher_state_path": tmp_path / "runtime" / "watcher-state.json",
-    }
-    for name, value in resolver_values.items():
-        monkeypatch.setitem(main.__globals__, name, lambda value=value: value)
-    monkeypatch.setitem(main.__globals__, "CodexSessionWatcher", FakeWatcher)
-    monkeypatch.setenv("AGENT_MEMORY_BRIDGE_RUN_ONCE", "1")
-
-    main()
-
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["processed_count"] == 0
-    config = watcher_configs[0]
-    assert config.sessions_root == tmp_path / "sessions"
-    assert config.idle_seconds == 11
-    assert config.checkpoint_seconds == 19
-    assert config.checkpoint_min_messages == 7
-    assert config.legacy_memory_mode is True
 
 
 def test_service_health_marks_backoff_cycle_degraded(monkeypatch, tmp_path: Path) -> None:
@@ -135,7 +91,7 @@ def test_cli_service_allows_explicit_multiple_service_override(monkeypatch) -> N
         allow_multiple_services: bool = False,
     ) -> dict[str, dict[str, object]]:
         calls.append((once, allow_multiple_services))
-        return {"watcher": {"status": "ok"}}
+        return {"reflex": {"status": "ok"}}
 
     monkeypatch.setattr(service_module, "run_service", fake_run_service)
 
@@ -158,8 +114,8 @@ def test_cli_service_once_returns_nonzero_when_a_lane_fails(monkeypatch) -> None
         service_module,
         "run_service",
         lambda **kwargs: {
-            "watcher": {"status": "failed"},
-            "reflex": {"status": "ok"},
+            "reflex": {"status": "failed"},
+            "consolidation": {"status": "ok"},
         },
     )
 
@@ -222,17 +178,8 @@ def test_cli_index_rebuild_refuses_when_service_lock_is_held_by_process(
     assert str(bridge_home / "service.lock") in captured.err
 
 
-def test_service_once_respects_disabled_watcher_and_reflex(monkeypatch, capsys, tmp_path: Path) -> None:
+def test_service_once_respects_disabled_reflex(monkeypatch, capsys, tmp_path: Path) -> None:
     calls: list[str] = []
-    watcher_configs: list[object] = []
-
-    class FakeWatcher:
-        def __init__(self, config) -> None:
-            watcher_configs.append(config)
-
-        def run_once(self) -> dict[str, object]:
-            calls.append("watcher")
-            return {"processed_count": 1}
 
     class FakeReflex:
         def __init__(self, *, store, config) -> None:
@@ -259,23 +206,14 @@ def test_service_once_respects_disabled_watcher_and_reflex(monkeypatch, capsys, 
             return {"processed_count": 0}
 
     monkeypatch.setattr(service_module, "MemoryStore", lambda **kwargs: object())
-    monkeypatch.setattr(service_module, "CodexSessionWatcher", FakeWatcher)
     monkeypatch.setattr(service_module, "ReflexEngine", FakeReflex)
     monkeypatch.setattr(service_module, "ConsolidationEngine", FakeConsolidation)
     monkeypatch.setattr(service_module, "GovernanceTriggerEngine", FakeGovernance)
     monkeypatch.setattr(service_module, "run_embedding_sidecar_maintenance", lambda store: {"processed_count": 0})
-    monkeypatch.setattr(service_module, "resolve_watcher_enabled", lambda: False)
-    monkeypatch.setattr(service_module, "resolve_watcher_legacy_memory_mode", lambda: True)
     monkeypatch.setattr(service_module, "resolve_reflex_enabled", lambda: False)
     monkeypatch.setattr(service_module, "resolve_bridge_home", lambda: tmp_path)
     monkeypatch.setattr(service_module, "resolve_bridge_db_path", lambda: __import__("pathlib").Path("bridge.db"))
     monkeypatch.setattr(service_module, "resolve_bridge_log_dir", lambda: __import__("pathlib").Path("logs"))
-    monkeypatch.setattr(service_module, "resolve_sessions_root", lambda: __import__("pathlib").Path("sessions"))
-    monkeypatch.setattr(service_module, "resolve_watcher_notes_root", lambda: __import__("pathlib").Path("notes"))
-    monkeypatch.setattr(
-        service_module, "resolve_watcher_state_path", lambda: __import__("pathlib").Path("watcher-state.json")
-    )
-    monkeypatch.setattr(service_module, "resolve_watcher_log_dir", lambda: __import__("pathlib").Path("watcher-logs"))
     monkeypatch.setattr(
         service_module, "resolve_reflex_state_path", lambda: __import__("pathlib").Path("reflex-state.json")
     )
@@ -295,27 +233,19 @@ def test_service_once_respects_disabled_watcher_and_reflex(monkeypatch, capsys, 
     payload = json.loads(capsys.readouterr().out)
     health = json.loads((tmp_path / "service-health.json").read_text(encoding="utf-8"))
     assert calls == ["consolidation", "governance"]
-    assert payload["watcher"]["enabled"] is False
+    assert "watcher" not in payload
     assert payload["reflex"]["enabled"] is False
-    assert watcher_configs[0].legacy_memory_mode is True
     assert health["status"] == "ok"
     assert health["last_cycle_started_at"]
     assert health["last_cycle_completed_at"]
     assert health["active_lane"] is None
-    assert health["lanes"]["watcher"]["enabled"] is False
+    assert "watcher" not in health["lanes"]
+    assert health["lanes"]["reflex"]["enabled"] is False
     assert health["lanes"]["consolidation"]["status"] == "ok"
 
 
 def test_service_once_isolates_lane_failures(monkeypatch, capsys, tmp_path: Path) -> None:
     calls: list[str] = []
-
-    class FakeWatcher:
-        def __init__(self, config) -> None:
-            pass
-
-        def run_once(self) -> dict[str, object]:
-            calls.append("watcher")
-            raise RuntimeError("watcher failed")
 
     class FakeReflex:
         def __init__(self, *, store, config) -> None:
@@ -323,7 +253,7 @@ def test_service_once_isolates_lane_failures(monkeypatch, capsys, tmp_path: Path
 
         def run_once(self) -> dict[str, object]:
             calls.append("reflex")
-            return {"processed_count": 0}
+            raise RuntimeError("reflex failed")
 
     class FakeConsolidation:
         def __init__(self, *, store, config) -> None:
@@ -342,7 +272,6 @@ def test_service_once_isolates_lane_failures(monkeypatch, capsys, tmp_path: Path
             return {"processed_count": 0}
 
     monkeypatch.setattr(service_module, "MemoryStore", lambda **kwargs: object())
-    monkeypatch.setattr(service_module, "CodexSessionWatcher", FakeWatcher)
     monkeypatch.setattr(service_module, "ReflexEngine", FakeReflex)
     monkeypatch.setattr(service_module, "ConsolidationEngine", FakeConsolidation)
     monkeypatch.setattr(service_module, "GovernanceTriggerEngine", FakeGovernance)
@@ -351,17 +280,10 @@ def test_service_once_isolates_lane_failures(monkeypatch, capsys, tmp_path: Path
         "run_embedding_sidecar_maintenance",
         lambda store: calls.append("embeddings") or {"processed_count": 0},
     )
-    monkeypatch.setattr(service_module, "resolve_watcher_enabled", lambda: True)
     monkeypatch.setattr(service_module, "resolve_reflex_enabled", lambda: True)
     monkeypatch.setattr(service_module, "resolve_bridge_home", lambda: tmp_path)
     monkeypatch.setattr(service_module, "resolve_bridge_db_path", lambda: __import__("pathlib").Path("bridge.db"))
     monkeypatch.setattr(service_module, "resolve_bridge_log_dir", lambda: __import__("pathlib").Path("logs"))
-    monkeypatch.setattr(service_module, "resolve_sessions_root", lambda: __import__("pathlib").Path("sessions"))
-    monkeypatch.setattr(service_module, "resolve_watcher_notes_root", lambda: __import__("pathlib").Path("notes"))
-    monkeypatch.setattr(
-        service_module, "resolve_watcher_state_path", lambda: __import__("pathlib").Path("watcher-state.json")
-    )
-    monkeypatch.setattr(service_module, "resolve_watcher_log_dir", lambda: __import__("pathlib").Path("watcher-logs"))
     monkeypatch.setattr(
         service_module, "resolve_reflex_state_path", lambda: __import__("pathlib").Path("reflex-state.json")
     )
@@ -380,12 +302,13 @@ def test_service_once_isolates_lane_failures(monkeypatch, capsys, tmp_path: Path
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
-    assert calls == ["watcher", "reflex", "consolidation", "governance", "embeddings"]
-    assert payload["watcher"]["status"] == "failed"
-    assert payload["watcher"]["error_type"] == "RuntimeError"
-    assert payload["watcher"]["failure_count"] == 1
-    assert payload["reflex"]["status"] == "ok"
-    assert "service lane watcher failed (RuntimeError)" in captured.err
+    assert calls == ["reflex", "consolidation", "governance", "embeddings"]
+    assert "watcher" not in payload
+    assert payload["reflex"]["status"] == "failed"
+    assert payload["reflex"]["error_type"] == "RuntimeError"
+    assert payload["reflex"]["failure_count"] == 1
+    assert payload["consolidation"]["status"] == "ok"
+    assert "service lane reflex failed (RuntimeError)" in captured.err
 
 
 def test_service_lane_backoff_is_bounded_and_resets_after_success() -> None:
