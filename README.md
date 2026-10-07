@@ -46,11 +46,36 @@ AMB is local-first and inspectable. It does not silently archive every conversat
 
 ## Quick Start
 
-AMB requires **Python 3.11+**, Git, and an MCP-compatible coding client that can launch a local stdio server.
+AMB requires **Python 3.11+**, Git, and an MCP-compatible coding client that can launch a local stdio server or connect via Streamable HTTP.
 
 Current package/source version: `0.36.0`.
 
 Published releases: see [GitHub Releases](https://github.com/zzhang82/Agent-Memory-Bridge/releases).
+
+### Agent setup (Recommended)
+
+Install the official companion skills from [Agent-Memory-Skills](https://github.com/zzhang82/Agent-Memory-Skills) (`amb` for everyday memory and `amb-connect` for host capability discovery and connection):
+
+- If you are in an agent CLI supporting skills (e.g. Claude Code, Cursor, OpenCode):
+  ```bash
+  npx skills add zzhang82/Agent-Memory-Skills --skill amb
+  npx skills add zzhang82/Agent-Memory-Skills --skill amb-connect
+  ```
+- Or read the skills directly:
+  - **`amb`** (Everyday memory recall, store, revise, annotate): [SKILL.md](https://github.com/zzhang82/Agent-Memory-Skills/blob/main/skills/amb/SKILL.md) ([raw](https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb/SKILL.md))
+  - **`amb-connect`** (Host capability discovery, stdio / Streamable HTTP MCP, tool profiles): [SKILL.md](https://github.com/zzhang82/Agent-Memory-Skills/blob/main/skills/amb-connect/SKILL.md) ([raw](https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb-connect/SKILL.md))
+
+#### Copy Agent Prompt
+
+Paste this into any coding agent chat to immediately configure and use AMB:
+
+```text
+You have access to Agent Memory Bridge (AMB) for persistent, governed project memory.
+- If AMB is not connected yet, use the `amb-connect` skill or follow https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb-connect/SKILL.md to discover host capabilities and configure MCP (local stdio or remote Streamable HTTP).
+- For everyday coding in this project, use the `amb` skill at https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb/SKILL.md to recall relevant gotchas, check live code against stored decisions, and preserve confirmed project knowledge.
+```
+
+### Manual Quickstart
 
 The product story is four steps: install AMB, initialize or resolve a project, run the generic MCP server, and use or inspect memory. Client connection stays outside Core.
 

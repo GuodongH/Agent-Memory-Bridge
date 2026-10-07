@@ -46,11 +46,36 @@ AMB 本地优先，而且可检查。它不会默默归档每一段对话，也�
 
 ## 快速开始
 
-AMB 需要 **Python 3.11+**、Git，以及能够启动本地 stdio server 的 MCP 兼容编码客户端。
+AMB 需要 **Python 3.11+**、Git，以及能够启动本地 stdio server 或连接 Streamable HTTP 的 MCP 兼容编码客户端。
 
 当前包/源码版本：`0.36.0`。
 
 已发布版本请见 [GitHub Releases](https://github.com/zzhang82/Agent-Memory-Bridge/releases)。
+
+### 智能体技能设置（推荐）
+
+安装官方配套技能仓库 [Agent-Memory-Skills](https://github.com/zzhang82/Agent-Memory-Skills)（包含日常记忆操作 `amb` 和宿主能力发现与连接 `amb-connect`）：
+
+- 如果使用的是支持 skills CLI 的智能体环境（例如 Claude Code、Cursor、OpenCode）：
+  ```bash
+  npx skills add zzhang82/Agent-Memory-Skills --skill amb
+  npx skills add zzhang82/Agent-Memory-Skills --skill amb-connect
+  ```
+- 或直接让智能体阅读技能文档：
+  - **`amb`**（日常记忆检索、存储、修订、元数据追加）：[SKILL.md](https://github.com/zzhang82/Agent-Memory-Skills/blob/main/skills/amb/SKILL.md)（[raw](https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb/SKILL.md)）
+  - **`amb-connect`**（宿主能力发现、stdio / Streamable HTTP MCP、工具 Profile 配置）：[SKILL.md](https://github.com/zzhang82/Agent-Memory-Skills/blob/main/skills/amb-connect/SKILL.md)（[raw](https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb-connect/SKILL.md))
+
+#### 智能体提示词
+
+复制此提示词发送给任何编码智能体，即可快速完成配置与记忆使用：
+
+```text
+你有权使用 Agent Memory Bridge (AMB) 维护跨会话、跨工具的项目持久记忆。
+- 如果尚未连接 AMB，请使用 `amb-connect` 技能或参考 https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb-connect/SKILL.md 发现宿主能力并配置 MCP（本地 stdio 或远程 Streamable HTTP）。
+- 在本项目的日常编码中，请使用 `amb` 技能（https://raw.githubusercontent.com/zzhang82/Agent-Memory-Skills/main/skills/amb/SKILL.md）检索相关 gotcha、根据已存决策校验代码，并在确认后沉淀关键项目知识。
+```
+
+### 手动安装与使用
 
 当前产品路径包含四个步骤：安装 AMB、初始化或解析项目、运行通用 MCP 服务，以及使用或检查记忆。客户端连接不属于 Core。
 

@@ -4,11 +4,16 @@ Use this file when an agent is installing Agent Memory Bridge for a human from
 the public project. The normal release install path is PyPI; an exact source
 checkout remains the development and audit path.
 
+> **Recommended Agent Setup**: Use the official companion skills from [Agent-Memory-Skills](https://github.com/zzhang82/Agent-Memory-Skills):
+> - **`amb-connect`**: Discovers host capabilities, configures stdio / Streamable HTTP MCP, sets tool profiles, and verifies connection.
+> - **`amb`**: Everyday memory recall, decision storage, revision, and metadata annotation.
+> Install via `npx skills add zzhang82/Agent-Memory-Skills --skill amb` (and `--skill amb-connect`) or read them directly at [Agent-Memory-Skills](https://github.com/zzhang82/Agent-Memory-Skills).
+
 ## Requirements
 
 - Python 3.11 or newer
 - network access to PyPI and GitHub
-- an MCP client that can launch a local stdio process
+- an MCP client that can launch a local stdio process or connect via Streamable HTTP
 - `uv` is optional; the baseline path uses Python and `pip`
 
 ## Ask Before Writing Config
@@ -60,7 +65,7 @@ the config.
 
 Installing AMB and registering it with a coding client are separate steps.
 Connecting a specific coding client is outside AMB Core; AMB does not write client MCP configuration. Use
-[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the generic command shape and installer contract.
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the generic command shape and installer contract, or use the `amb-connect` companion skill.
 Set the stdio command to the derived venv interpreter and the arguments to:
 
 ```json

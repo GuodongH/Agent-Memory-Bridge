@@ -5,10 +5,15 @@ Memory Bridge into an MCP-compatible client. The normal release install path is
 PyPI; an exact source checkout remains the publication-independent evaluation
 and development path.
 
+> **Recommended Agent Route**: Rather than following manual client configuration scripts, install the official companion skills from [Agent-Memory-Skills](https://github.com/zzhang82/Agent-Memory-Skills):
+> - **`amb-connect`**: Discovers host capabilities, configures stdio or Streamable HTTP MCP, sets tool profiles, and verifies the connection.
+> - **`amb`**: Everyday memory recall, decision storage, revision, and metadata annotation.
+> Install via `npx skills add zzhang82/Agent-Memory-Skills --skill amb` (and `--skill amb-connect`) or read them directly at [Agent-Memory-Skills](https://github.com/zzhang82/Agent-Memory-Skills).
+
 Use it as an agent-readable setup protocol. Do not treat it as a runtime,
 watcher, scheduler, or hosted service.
 
-For the shortest procedure, start with [`llms-install.md`](llms-install.md).
+For the shortest manual procedure, start with [`llms-install.md`](llms-install.md).
 
 ## What You Are Installing
 
