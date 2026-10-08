@@ -325,9 +325,13 @@ def test_mixed_case_namespace_initialization_allowed(tmp_path: Path, monkeypatch
     assert main(["project", "init", str(repo), "--namespace", "project:Moebius", "--yes"]) == 0
     output = capsys.readouterr().out
     assert "Initialized project: Moebius" in output
-    assert "Namespace: project:Moebius" in output
+    assert "Namespace: project:moebius" in output
     store = RepositorySnapshotStore(home / "repository")
-    assert "project:Moebius" in store.bindings()["bindings"]
+    assert "project:moebius" in store.bindings()["bindings"]
+
+    second = make_repo(tmp_path, name="Other")
+    assert main(["project", "init", str(second), "--namespace", "project:moebius", "--yes"]) == 1
+    assert "already bound to a different repository" in capsys.readouterr().out
 
 
 def test_explorer_json_contract_unchanged_after_init(tmp_path: Path, monkeypatch) -> None:

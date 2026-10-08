@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .namespaces import canonical_namespace
 from .paths import resolve_bridge_db_path
 from .recall_eligibility import direct_lookup_ineligibility_reasons
 from .relation_metadata import parse_content_fields, parse_relation_metadata
@@ -113,7 +114,7 @@ def _build_explorer(
     memory_store: Any | None = None,
     limit: int = 100,
 ) -> _ExplorerBuild:
-    cleaned_namespace = namespace.strip()
+    cleaned_namespace = canonical_namespace(namespace)
     if not cleaned_namespace:
         raise ValueError("namespace must not be empty")
     bounded_limit = max(1, min(int(limit), 500))
@@ -728,7 +729,7 @@ def _read_governed_memories(
                    m.lineage_status, mm.record_type, mm.valid_from, mm.valid_until, mm.validation_issues_json
             FROM memories AS m
             LEFT JOIN memory_metadata AS mm ON mm.memory_id = m.id
-            WHERE m.namespace = ? COLLATE NOCASE AND COALESCE(m.is_learning_candidate, 0) = 0
+            WHERE m.namespace = ? AND COALESCE(m.is_learning_candidate, 0) = 0
             ORDER BY m.created_at ASC, m.id ASC
             LIMIT ?
             """,
@@ -815,7 +816,7 @@ def _read_relation_targets(
                    m.lineage_status, mm.record_type, mm.valid_from, mm.valid_until, mm.validation_issues_json
             FROM memories AS m
             LEFT JOIN memory_metadata AS mm ON mm.memory_id = m.id
-            WHERE m.namespace = ? COLLATE NOCASE AND m.id IN ({placeholders})
+            WHERE m.namespace = ? AND m.id IN ({placeholders})
               AND COALESCE(m.is_learning_candidate, 0) = 0
             ORDER BY m.id ASC
             """,

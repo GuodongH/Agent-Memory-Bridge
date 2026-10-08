@@ -11,10 +11,11 @@ from .knowledge_explorer import (
     _presentation_from_build,
     render_explorer_human_markdown,
 )
+from .namespaces import canonical_namespace
 from .repository_bootstrap import compile_repository_snapshot
 from .repository_snapshot_store import RepositorySnapshotStore, repository_identity
 
-PROJECT_NAMESPACE_RE = re.compile(r"^project:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.IGNORECASE)
+PROJECT_NAMESPACE_RE = re.compile(r"^project:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 NAMESPACE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -41,9 +42,9 @@ def propose_project_namespace(repository_name: str) -> str:
 
 
 def validate_project_namespace(namespace: str) -> str:
-    cleaned = namespace.strip()
+    cleaned = canonical_namespace(namespace)
     if not PROJECT_NAMESPACE_RE.fullmatch(cleaned):
-        raise ValueError("namespace must be `project:` plus a slug of letters, digits, and hyphens")
+        raise ValueError("namespace must be `project:` plus a lowercase slug of letters, digits, and hyphens")
     return cleaned
 
 

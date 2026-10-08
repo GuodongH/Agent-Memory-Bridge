@@ -261,6 +261,53 @@ def _ensure_current_schema(conn: sqlite3.Connection) -> None:
     _ensure_dynamic_state_schema(conn)
     _ensure_dynamic_state_request_schema(conn)
     backfill_record_projections(conn, only_missing=True)
+    _migrate_mixed_case_project_namespaces(conn)
+
+
+def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        DELETE FROM memories
+        WHERE id IN (
+            SELECT m1.id
+            FROM memories m1
+            JOIN memories m2
+              ON lower(m1.namespace) = m2.namespace
+             AND m1.exact_content_hash = m2.exact_content_hash
+             AND m1.id != m2.id
+             AND m1.namespace LIKE 'project:%'
+             AND m1.namespace != lower(m1.namespace)
+        )
+        """
+    )
+    conn.execute(
+        """
+        UPDATE memories
+        SET namespace = lower(namespace)
+        WHERE namespace LIKE 'project:%' AND namespace != lower(namespace)
+        """
+    )
+    conn.execute(
+        """
+        UPDATE memory_tombstones
+        SET namespace = lower(namespace)
+        WHERE namespace LIKE 'project:%' AND namespace != lower(namespace)
+        """
+    )
+    conn.execute(
+        """
+        UPDATE memory_edges
+        SET target_namespace = lower(target_namespace)
+        WHERE target_namespace LIKE 'project:%' AND target_namespace != lower(target_namespace)
+        """
+    )
+    conn.execute(
+        """
+        UPDATE retrieval_feedback
+        SET namespace = lower(namespace)
+        WHERE namespace LIKE 'project:%' AND namespace != lower(namespace)
+        """
+    )
 
 
 def _coerce_schema_migration(

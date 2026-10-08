@@ -427,6 +427,6 @@ def test_mixed_case_bound_repository_resolves(tmp_path: Path) -> None:
     identity = bind_current(repo, snapshot_root, "project:Moebius")
     result = resolve_project_context(repo, snapshot_root=snapshot_root)
     assert result["status"] == "bound"
-    assert result["namespace"] == "project:Moebius"
-    assert namespace_for_host_adapter(result) == "project:Moebius"
+    assert result["namespace"] == "project:moebius"
+    assert namespace_for_host_adapter(result) == "project:moebius"
     assert result["repository_identity"] == identity
