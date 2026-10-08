@@ -827,7 +827,7 @@ def stats_for_namespace(store: Any, namespace: str) -> dict[str, Any]:
             SELECT
                 {MEMORY_ROW_SELECT}
             FROM memories
-            WHERE namespace = ?
+            WHERE namespace = ? COLLATE NOCASE
             AND is_learning_candidate = 0
             ORDER BY created_at ASC
             """,

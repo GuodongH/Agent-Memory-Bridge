@@ -262,7 +262,14 @@ class RepositorySnapshotStore:
             return removed
 
     def load_bound_snapshot(self, namespace: str) -> dict[str, Any] | None:
-        binding = self.bindings()["bindings"].get(namespace.strip())
+        cleaned = namespace.strip()
+        bindings = self.bindings()["bindings"]
+        binding = bindings.get(cleaned)
+        if not isinstance(binding, dict):
+            for key, val in bindings.items():
+                if isinstance(key, str) and key.casefold() == cleaned.casefold():
+                    binding = val
+                    break
         if not isinstance(binding, dict):
             return None
         repository_id = binding.get("repository_id")

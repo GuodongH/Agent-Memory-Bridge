@@ -797,7 +797,7 @@ def build_filters(
     exclude_ids: set[str] | None = None,
 ) -> tuple[str, list[Any]]:
     prefix = f"{alias}." if alias else ""
-    clauses = [f"{prefix}namespace = ?"]
+    clauses = [f"{prefix}namespace = ? COLLATE NOCASE"]
     params: list[Any] = [namespace]
 
     include_learning_candidates = should_include_learning_candidates(tags_any)
@@ -923,7 +923,7 @@ def build_since_filter(
 ) -> tuple[str, list[Any]]:
     opaque = decode_poll_cursor(since_id)
     if opaque is not None:
-        if opaque.namespace != namespace:
+        if opaque.namespace.casefold() != namespace.casefold():
             raise ValueError("invalid since cursor: namespace mismatch")
         active_epoch = current_database_epoch
         if active_epoch is None:
@@ -959,7 +959,7 @@ def build_since_filter(
             ).fetchone()
     if row is None:
         raise ValueError(f"invalid since cursor: {since_id}")
-    if row["namespace"] != namespace:
+    if row["namespace"].casefold() != namespace.casefold():
         raise ValueError("invalid since cursor: namespace mismatch")
     return (
         f"(SELECT sequence FROM memory_insertions WHERE memory_id = {prefix}id) > ?",

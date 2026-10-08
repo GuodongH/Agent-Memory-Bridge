@@ -728,7 +728,7 @@ def _read_governed_memories(
                    m.lineage_status, mm.record_type, mm.valid_from, mm.valid_until, mm.validation_issues_json
             FROM memories AS m
             LEFT JOIN memory_metadata AS mm ON mm.memory_id = m.id
-            WHERE m.namespace = ? AND COALESCE(m.is_learning_candidate, 0) = 0
+            WHERE m.namespace = ? COLLATE NOCASE AND COALESCE(m.is_learning_candidate, 0) = 0
             ORDER BY m.created_at ASC, m.id ASC
             LIMIT ?
             """,
@@ -815,7 +815,7 @@ def _read_relation_targets(
                    m.lineage_status, mm.record_type, mm.valid_from, mm.valid_until, mm.validation_issues_json
             FROM memories AS m
             LEFT JOIN memory_metadata AS mm ON mm.memory_id = m.id
-            WHERE m.namespace = ? AND m.id IN ({placeholders})
+            WHERE m.namespace = ? COLLATE NOCASE AND m.id IN ({placeholders})
               AND COALESCE(m.is_learning_candidate, 0) = 0
             ORDER BY m.id ASC
             """,

@@ -319,6 +319,17 @@ def test_no_durable_memory_or_learning_candidates(tmp_path: Path, monkeypatch) -
         assert feedback == 0
 
 
+def test_mixed_case_namespace_initialization_allowed(tmp_path: Path, monkeypatch, capsys) -> None:
+    repo = make_repo(tmp_path, name="Moebius")
+    home = isolate_home(tmp_path, monkeypatch)
+    assert main(["project", "init", str(repo), "--namespace", "project:Moebius", "--yes"]) == 0
+    output = capsys.readouterr().out
+    assert "Initialized project: Moebius" in output
+    assert "Namespace: project:Moebius" in output
+    store = RepositorySnapshotStore(home / "repository")
+    assert "project:Moebius" in store.bindings()["bindings"]
+
+
 def test_explorer_json_contract_unchanged_after_init(tmp_path: Path, monkeypatch) -> None:
     from tests.test_knowledge_explorer import FakeMemoryStore, durable_items
 
