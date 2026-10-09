@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .embedding_index import ensure_embedding_schema
+from .namespaces import canonical_namespace
 from .record_projection import backfill_record_projections
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -265,49 +266,197 @@ def _ensure_current_schema(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
-    conn.execute(
+    from collections import defaultdict
+
+    cursor = conn.execute(
         """
-        DELETE FROM memories
-        WHERE id IN (
-            SELECT m1.id
-            FROM memories m1
-            JOIN memories m2
-              ON lower(m1.namespace) = m2.namespace
-             AND m1.exact_content_hash = m2.exact_content_hash
-             AND m1.id != m2.id
-             AND m1.namespace LIKE 'project:%'
-             AND m1.namespace != lower(m1.namespace)
-        )
+        SELECT id, namespace, kind, title, content, exact_content_hash, created_at, rowid
+        FROM memories
+        WHERE namespace LIKE 'project:%'
+        ORDER BY created_at ASC, rowid ASC
         """
     )
-    conn.execute(
+    rows = cursor.fetchall()
+    if not rows:
+        return
+
+    groups: dict[tuple[str, str], list[sqlite3.Row]] = defaultdict(list)
+    for row in rows:
+        c_ns = canonical_namespace(row["namespace"])
+        if row["kind"] != "signal" and row["exact_content_hash"]:
+            groups[(c_ns, row["exact_content_hash"])].append(row)
+
+    for (c_ns, _), member_rows in groups.items():
+        if len(member_rows) <= 1:
+            continue
+        survivor = member_rows[0]
+        survivor_id = survivor["id"]
+        for dup in member_rows[1:]:
+            dup_id = dup["id"]
+            # Move outgoing edges
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO memory_edges (
+                    source_id, target_id, relation, position, machine_owned, target_namespace, target_exists
+                )
+                SELECT ?, target_id, relation, position, machine_owned, target_namespace, target_exists
+                FROM memory_edges WHERE source_id = ?
+                """,
+                (survivor_id, dup_id),
+            )
+            conn.execute("DELETE FROM memory_edges WHERE source_id = ?", (dup_id,))
+
+            # Move incoming edges
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO memory_edges (
+                    source_id, target_id, relation, position, machine_owned, target_namespace, target_exists
+                )
+                SELECT source_id, ?, relation, position, machine_owned, target_namespace, target_exists
+                FROM memory_edges WHERE target_id = ?
+                """,
+                (survivor_id, dup_id),
+            )
+            conn.execute("DELETE FROM memory_edges WHERE target_id = ?", (dup_id,))
+
+            # Move annotations
+            conn.execute(
+                "UPDATE memory_annotations SET memory_id = ? WHERE memory_id = ?",
+                (survivor_id, dup_id),
+            )
+
+            # Move tags
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO memory_tags (memory_id, tag, prefix)
+                SELECT ?, tag, prefix FROM memory_tags WHERE memory_id = ?
+                """,
+                (survivor_id, dup_id),
+            )
+            conn.execute("DELETE FROM memory_tags WHERE memory_id = ?", (dup_id,))
+
+            # Move retrieval_feedback
+            conn.execute(
+                "UPDATE retrieval_feedback SET memory_id = ? WHERE memory_id = ?",
+                (survivor_id, dup_id),
+            )
+
+            # Move metadata if survivor has none
+            try:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO memory_metadata (
+                        memory_id, record_type, status, confidence, confidence_label,
+                        valid_from, valid_until, metadata_schema_version, validation_issues_json
+                    )
+                    SELECT ?, record_type, status, confidence, confidence_label,
+                           valid_from, valid_until, metadata_schema_version, validation_issues_json
+                    FROM memory_metadata WHERE memory_id = ?
+                    """,
+                    (survivor_id, dup_id),
+                )
+            except sqlite3.OperationalError:
+                pass
+
+            # Move run_memory_links if present
+            try:
+                conn.execute(
+                    "UPDATE run_memory_links SET memory_id = ? WHERE memory_id = ?",
+                    (survivor_id, dup_id),
+                )
+            except sqlite3.OperationalError:
+                pass
+
+            # Prune duplicate search-index entries from memories_fts
+            try:
+                conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (dup_id,))
+            except sqlite3.OperationalError:
+                pass
+
+            # Remove from memory_insertions if present
+            try:
+                conn.execute("DELETE FROM memory_insertions WHERE memory_id = ?", (dup_id,))
+            except sqlite3.OperationalError:
+                pass
+
+            # Delete the duplicate memory row
+            conn.execute("DELETE FROM memories WHERE id = ?", (dup_id,))
+
+        # Ensure survivor is indexed in memories_fts
+        try:
+            fts_exists = conn.execute("SELECT 1 FROM memories_fts WHERE memory_id = ?", (survivor_id,)).fetchone()
+            if not fts_exists:
+                conn.execute(
+                    "INSERT INTO memories_fts (memory_id, title, content) VALUES (?, ?, ?)",
+                    (survivor_id, survivor["title"], survivor["content"]),
+                )
+        except sqlite3.OperationalError:
+            pass
+
+    # Update namespace of remaining memories to canonical lowercase
+    for row in rows:
+        c_ns = canonical_namespace(row["namespace"])
+        if c_ns != row["namespace"]:
+            conn.execute(
+                "UPDATE memories SET namespace = ? WHERE id = ? AND namespace = ?",
+                (c_ns, row["id"], row["namespace"]),
+            )
+
+    # Update target_namespace in memory_edges
+    edges = conn.execute(
         """
-        UPDATE memories
-        SET namespace = lower(namespace)
-        WHERE namespace LIKE 'project:%' AND namespace != lower(namespace)
+        SELECT source_id, target_id, relation, target_namespace
+        FROM memory_edges
+        WHERE target_namespace LIKE 'project:%'
         """
-    )
-    conn.execute(
+    ).fetchall()
+    for edge in edges:
+        raw_tns = edge["target_namespace"]
+        if raw_tns:
+            c_tns = canonical_namespace(raw_tns)
+            if c_tns != raw_tns:
+                conn.execute(
+                    """
+                    UPDATE memory_edges
+                    SET target_namespace = ?
+                    WHERE source_id = ? AND target_id = ? AND relation = ?
+                    """,
+                    (c_tns, edge["source_id"], edge["target_id"], edge["relation"]),
+                )
+
+    # Update namespace in retrieval_feedback
+    fbs = conn.execute(
         """
-        UPDATE memory_tombstones
-        SET namespace = lower(namespace)
-        WHERE namespace LIKE 'project:%' AND namespace != lower(namespace)
+        SELECT feedback_id, namespace
+        FROM retrieval_feedback
+        WHERE namespace LIKE 'project:%'
         """
-    )
-    conn.execute(
+    ).fetchall()
+    for fb in fbs:
+        raw_ns = fb["namespace"]
+        c_ns = canonical_namespace(raw_ns)
+        if c_ns != raw_ns:
+            conn.execute(
+                "UPDATE retrieval_feedback SET namespace = ? WHERE feedback_id = ?",
+                (c_ns, fb["feedback_id"]),
+            )
+
+    # Update namespace in memory_tombstones
+    tbs = conn.execute(
         """
-        UPDATE memory_edges
-        SET target_namespace = lower(target_namespace)
-        WHERE target_namespace LIKE 'project:%' AND target_namespace != lower(target_namespace)
+        SELECT forgotten_id, namespace
+        FROM memory_tombstones
+        WHERE namespace LIKE 'project:%'
         """
-    )
-    conn.execute(
-        """
-        UPDATE retrieval_feedback
-        SET namespace = lower(namespace)
-        WHERE namespace LIKE 'project:%' AND namespace != lower(namespace)
-        """
-    )
+    ).fetchall()
+    for tb in tbs:
+        raw_ns = tb["namespace"]
+        c_ns = canonical_namespace(raw_ns)
+        if c_ns != raw_ns:
+            conn.execute(
+                "UPDATE memory_tombstones SET namespace = ? WHERE forgotten_id = ?",
+                (c_ns, tb["forgotten_id"]),
+            )
 
 
 def _coerce_schema_migration(

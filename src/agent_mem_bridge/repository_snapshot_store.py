@@ -231,6 +231,14 @@ class RepositorySnapshotStore:
         if isinstance(raw_bindings, dict):
             for k, v in raw_bindings.items():
                 norm_k = canonical_namespace(k) if isinstance(k, str) else k
+                if norm_k in bindings:
+                    existing = bindings[norm_k]
+                    existing_repo = existing.get("repository_id") if isinstance(existing, dict) else None
+                    incoming_repo = v.get("repository_id") if isinstance(v, dict) else None
+                    if existing_repo != incoming_repo:
+                        raise ValueError(
+                            f"binding collision: namespace {norm_k!r} is bound to conflicting repositories"
+                        )
                 bindings[norm_k] = v
         return {"store_schema": BINDING_STORE_SCHEMA, "bindings": bindings}
 
