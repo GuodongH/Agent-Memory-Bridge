@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from .embedding_index import ensure_embedding_schema
 from .namespaces import canonical_namespace
-from .record_projection import backfill_record_projections
+from .record_projection import backfill_record_projections, sync_record_projection
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 CURRENT_SCHEMA_VERSION = 12
@@ -112,6 +114,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             )
         if not migrated:
             _ensure_current_schema(conn)
+        _migrate_mixed_case_project_namespaces(conn)
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -262,201 +265,446 @@ def _ensure_current_schema(conn: sqlite3.Connection) -> None:
     _ensure_dynamic_state_schema(conn)
     _ensure_dynamic_state_request_schema(conn)
     backfill_record_projections(conn, only_missing=True)
-    _migrate_mixed_case_project_namespaces(conn)
 
 
 def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
     from collections import defaultdict
+    from datetime import datetime, timezone
 
-    cursor = conn.execute(
-        """
-        SELECT id, namespace, kind, title, content, exact_content_hash, created_at, rowid
-        FROM memories
-        WHERE namespace LIKE 'project:%'
-        ORDER BY created_at ASC, rowid ASC
-        """
-    )
-    rows = cursor.fetchall()
-    if not rows:
+    from .repository import content_hash_for_content, normalize_tags
+
+    def _table_exists(table_name: str) -> bool:
+        return (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table_name,),
+            ).fetchone()
+            is not None
+        )
+
+    has_memories_table = _table_exists("memories")
+    if not has_memories_table:
         return
 
-    groups: dict[tuple[str, str], list[sqlite3.Row]] = defaultdict(list)
-    for row in rows:
-        c_ns = canonical_namespace(row["namespace"])
-        if row["kind"] != "signal" and row["exact_content_hash"]:
-            groups[(c_ns, row["exact_content_hash"])].append(row)
+    has_feedback_table = _table_exists("retrieval_feedback")
+    has_edges_table = _table_exists("memory_edges")
+    has_tags_table = _table_exists("memory_tags")
+    has_revisions_table = _table_exists("memory_revisions")
+    has_annotations_table = _table_exists("memory_annotations")
+    has_tombstones_table = _table_exists("memory_tombstones")
 
-    for (c_ns, _), member_rows in groups.items():
-        if len(member_rows) <= 1:
-            continue
-        survivor = member_rows[0]
-        survivor_id = survivor["id"]
-        for dup in member_rows[1:]:
-            dup_id = dup["id"]
-            # Move outgoing edges
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO memory_edges (
-                    source_id, target_id, relation, position, machine_owned, target_namespace, target_exists
-                )
-                SELECT ?, target_id, relation, position, machine_owned, target_namespace, target_exists
-                FROM memory_edges WHERE source_id = ?
-                """,
-                (survivor_id, dup_id),
-            )
-            conn.execute("DELETE FROM memory_edges WHERE source_id = ?", (dup_id,))
+    mem_cols = set(_table_column_names(conn, "memories"))
+    has_exact_content_hash = "exact_content_hash" in mem_cols
+    has_content_hash = "content_hash" in mem_cols
+    has_tags_json = "tags_json" in mem_cols
+    has_title = "title" in mem_cols
+    has_actor = "actor" in mem_cols
+    has_source_app = "source_app" in mem_cols
+    has_learning_candidate = "is_learning_candidate" in mem_cols
 
-            # Move incoming edges
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO memory_edges (
-                    source_id, target_id, relation, position, machine_owned, target_namespace, target_exists
-                )
-                SELECT source_id, ?, relation, position, machine_owned, target_namespace, target_exists
-                FROM memory_edges WHERE target_id = ?
-                """,
-                (survivor_id, dup_id),
-            )
-            conn.execute("DELETE FROM memory_edges WHERE target_id = ?", (dup_id,))
+    if has_exact_content_hash:
+        hash_col = "exact_content_hash"
+    elif has_content_hash:
+        hash_col = "content_hash AS exact_content_hash"
+    else:
+        hash_col = "NULL AS exact_content_hash"
 
-            # Move annotations
-            conn.execute(
-                "UPDATE memory_annotations SET memory_id = ? WHERE memory_id = ?",
-                (survivor_id, dup_id),
-            )
+    title_col = "title" if has_title else "NULL AS title"
+    tags_col = "tags_json" if has_tags_json else "'[]' AS tags_json"
+    actor_col = "actor" if has_actor else "NULL AS actor"
+    source_col = "source_app" if has_source_app else "NULL AS source_app"
+    candidate_col = "is_learning_candidate" if has_learning_candidate else "0 AS is_learning_candidate"
 
-            # Move tags
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO memory_tags (memory_id, tag, prefix)
-                SELECT ?, tag, prefix FROM memory_tags WHERE memory_id = ?
-                """,
-                (survivor_id, dup_id),
-            )
-            conn.execute("DELETE FROM memory_tags WHERE memory_id = ?", (dup_id,))
-
-            # Move retrieval_feedback
-            conn.execute(
-                "UPDATE retrieval_feedback SET memory_id = ? WHERE memory_id = ?",
-                (survivor_id, dup_id),
-            )
-
-            # Move metadata if survivor has none
-            try:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO memory_metadata (
-                        memory_id, record_type, status, confidence, confidence_label,
-                        valid_from, valid_until, metadata_schema_version, validation_issues_json
-                    )
-                    SELECT ?, record_type, status, confidence, confidence_label,
-                           valid_from, valid_until, metadata_schema_version, validation_issues_json
-                    FROM memory_metadata WHERE memory_id = ?
-                    """,
-                    (survivor_id, dup_id),
-                )
-            except sqlite3.OperationalError:
-                pass
-
-            # Move run_memory_links if present
-            try:
-                conn.execute(
-                    "UPDATE run_memory_links SET memory_id = ? WHERE memory_id = ?",
-                    (survivor_id, dup_id),
-                )
-            except sqlite3.OperationalError:
-                pass
-
-            # Prune duplicate search-index entries from memories_fts
-            try:
-                conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (dup_id,))
-            except sqlite3.OperationalError:
-                pass
-
-            # Remove from memory_insertions if present
-            try:
-                conn.execute("DELETE FROM memory_insertions WHERE memory_id = ?", (dup_id,))
-            except sqlite3.OperationalError:
-                pass
-
-            # Delete the duplicate memory row
-            conn.execute("DELETE FROM memories WHERE id = ?", (dup_id,))
-
-        # Ensure survivor is indexed in memories_fts
+    def _safe_load_tags(raw: Any) -> list[str]:
         try:
-            fts_exists = conn.execute("SELECT 1 FROM memories_fts WHERE memory_id = ?", (survivor_id,)).fetchone()
-            if not fts_exists:
+            data = json.loads(str(raw or "[]"))
+            return [t for t in data if isinstance(t, str)] if isinstance(data, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    saved_triggers: list[str] = []
+    if has_feedback_table:
+        for trg in ("prevent_retrieval_feedback_update", "prevent_retrieval_feedback_delete"):
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+                (trg,),
+            ).fetchone()
+            if row and row["sql"]:
+                saved_triggers.append(str(row["sql"]))
+            conn.execute(f"DROP TRIGGER IF EXISTS {trg}")
+
+    try:
+        cursor = conn.execute(
+            f"""
+            SELECT id, namespace, kind, {title_col}, content, {tags_col}, {hash_col}, created_at, rowid,
+                   {actor_col}, {source_col}, {candidate_col}
+            FROM memories
+            WHERE namespace LIKE 'project:%'
+            ORDER BY created_at ASC, rowid ASC
+            """
+        )
+        rows = cursor.fetchall()
+
+        groups: dict[tuple[str, str], list[sqlite3.Row]] = defaultdict(list)
+        for row in rows:
+            c_ns = canonical_namespace(row["namespace"])
+            if row["kind"] != "signal" and row["exact_content_hash"]:
+                groups[(c_ns, row["exact_content_hash"])].append(row)
+
+        for (c_ns, _), member_rows in groups.items():
+            if len(member_rows) <= 1:
+                continue
+            survivor = member_rows[0]
+            survivor_id = survivor["id"]
+
+            # Merge all tags across survivor and duplicates into authoritative tags_json
+            survivor_tags = _safe_load_tags(survivor["tags_json"])
+            accumulated_tags: list[str] = list(survivor_tags)
+            if has_tags_table:
+                surv_tag_rows = conn.execute(
+                    "SELECT tag FROM memory_tags WHERE memory_id = ?", (survivor_id,)
+                ).fetchall()
+                accumulated_tags.extend(r["tag"] for r in surv_tag_rows)
+
+            for dup in member_rows[1:]:
+                accumulated_tags.extend(_safe_load_tags(dup["tags_json"]))
+                if has_tags_table:
+                    dup_tag_rows = conn.execute(
+                        "SELECT tag FROM memory_tags WHERE memory_id = ?", (dup["id"],)
+                    ).fetchall()
+                    accumulated_tags.extend(r["tag"] for r in dup_tag_rows)
+            merged_tags = normalize_tags(accumulated_tags)
+
+            if has_tags_json:
                 conn.execute(
-                    "INSERT INTO memories_fts (memory_id, title, content) VALUES (?, ?, ?)",
-                    (survivor_id, survivor["title"], survivor["content"]),
+                    "UPDATE memories SET tags_json = ? WHERE id = ?",
+                    (json.dumps(merged_tags), survivor_id),
                 )
-        except sqlite3.OperationalError:
-            pass
 
-    # Update namespace of remaining memories to canonical lowercase
-    for row in rows:
-        c_ns = canonical_namespace(row["namespace"])
-        if c_ns != row["namespace"]:
-            conn.execute(
-                "UPDATE memories SET namespace = ? WHERE id = ? AND namespace = ?",
-                (c_ns, row["id"], row["namespace"]),
-            )
+            if has_learning_candidate:
+                is_candidate = any(bool(r["is_learning_candidate"]) for r in member_rows) or any(
+                    t in merged_tags for t in ("kind:learning-candidate", "kind:learning-review")
+                )
+                if is_candidate:
+                    conn.execute(
+                        "UPDATE memories SET is_learning_candidate = 1 WHERE id = ?",
+                        (survivor_id,),
+                    )
 
-    # Update target_namespace in memory_edges
-    edges = conn.execute(
-        """
-        SELECT source_id, target_id, relation, target_namespace
-        FROM memory_edges
-        WHERE target_namespace LIKE 'project:%'
-        """
-    ).fetchall()
-    for edge in edges:
-        raw_tns = edge["target_namespace"]
-        if raw_tns:
-            c_tns = canonical_namespace(raw_tns)
-            if c_tns != raw_tns:
-                conn.execute(
-                    """
-                    UPDATE memory_edges
-                    SET target_namespace = ?
-                    WHERE source_id = ? AND target_id = ? AND relation = ?
+            for dup in member_rows[1:]:
+                dup_id = dup["id"]
+
+                # Repoint content references (e.g. depends_on: dup_id, supersedes: dup_id) in other memories
+                referencing_rows = conn.execute(
+                    f"""
+                    SELECT id, namespace, content, {tags_col}, kind, {actor_col}, {source_col}, {candidate_col}
+                    FROM memories
+                    WHERE content LIKE ?
                     """,
-                    (c_tns, edge["source_id"], edge["target_id"], edge["relation"]),
+                    (f"%{dup_id}%",),
+                ).fetchall()
+                id_pattern = rf"\b{re.escape(dup_id)}\b"
+                for ref in referencing_rows:
+                    if ref["id"] == dup_id or not re.search(id_pattern, ref["content"]):
+                        continue
+                    new_content = re.sub(id_pattern, survivor_id, ref["content"])
+                    new_ch = content_hash_for_content(new_content)
+                    if has_exact_content_hash:
+                        new_ech = exact_content_hash(new_content)
+                        conn.execute(
+                            """
+                            UPDATE memories
+                            SET content = ?, content_hash = ?, exact_content_hash = ?
+                            WHERE id = ?
+                            """,
+                            (new_content, new_ch, new_ech, ref["id"]),
+                        )
+                    elif has_content_hash:
+                        conn.execute(
+                            """
+                            UPDATE memories
+                            SET content = ?, content_hash = ?
+                            WHERE id = ?
+                            """,
+                            (new_content, new_ch, ref["id"]),
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            UPDATE memories
+                            SET content = ?
+                            WHERE id = ?
+                            """,
+                            (new_content, ref["id"]),
+                        )
+                    try:
+                        conn.execute(
+                            "UPDATE memories_fts SET content = ? WHERE memory_id = ?",
+                            (new_content, ref["id"]),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+                    ref_tags = _safe_load_tags(ref["tags_json"])
+                    try:
+                        sync_record_projection(
+                            conn,
+                            memory_id=ref["id"],
+                            namespace=canonical_namespace(ref["namespace"]),
+                            content=new_content,
+                            tags=ref_tags,
+                            kind=ref["kind"],
+                            actor=ref["actor"],
+                            source_app=ref["source_app"],
+                            is_learning_candidate=bool(ref["is_learning_candidate"]),
+                        )
+                    except sqlite3.OperationalError:
+                        pass
+
+                if has_edges_table:
+                    # Move outgoing edges
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO memory_edges (
+                            source_id, target_id, relation, position, machine_owned, target_namespace, target_exists
+                        )
+                        SELECT ?, target_id, relation, position, machine_owned, target_namespace, target_exists
+                        FROM memory_edges WHERE source_id = ?
+                        """,
+                        (survivor_id, dup_id),
+                    )
+                    conn.execute("DELETE FROM memory_edges WHERE source_id = ?", (dup_id,))
+
+                    # Move incoming edges
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO memory_edges (
+                            source_id, target_id, relation, position, machine_owned, target_namespace, target_exists
+                        )
+                        SELECT source_id, ?, relation, position, machine_owned, target_namespace, target_exists
+                        FROM memory_edges WHERE target_id = ?
+                        """,
+                        (survivor_id, dup_id),
+                    )
+                    conn.execute("DELETE FROM memory_edges WHERE target_id = ?", (dup_id,))
+                    conn.execute("DELETE FROM memory_edges WHERE source_id = target_id")
+
+                # Revisions: repoint predecessor and successor links to survivor
+                if has_revisions_table:
+                    conn.execute(
+                        """
+                        DELETE FROM memory_revisions
+                        WHERE predecessor_id = ?
+                          AND successor_id IN (
+                              SELECT successor_id FROM memory_revisions WHERE predecessor_id = ?
+                          )
+                        """,
+                        (dup_id, survivor_id),
+                    )
+                    conn.execute(
+                        "UPDATE memory_revisions SET predecessor_id = ? WHERE predecessor_id = ?",
+                        (survivor_id, dup_id),
+                    )
+                    conn.execute(
+                        """
+                        DELETE FROM memory_revisions
+                        WHERE successor_id = ?
+                          AND predecessor_id IN (
+                              SELECT predecessor_id FROM memory_revisions WHERE successor_id = ?
+                          )
+                        """,
+                        (dup_id, survivor_id),
+                    )
+                    conn.execute(
+                        "UPDATE memory_revisions SET successor_id = ? WHERE successor_id = ?",
+                        (survivor_id, dup_id),
+                    )
+                    conn.execute("DELETE FROM memory_revisions WHERE predecessor_id = successor_id")
+
+                # Annotations
+                if has_annotations_table:
+                    conn.execute(
+                        "UPDATE memory_annotations SET memory_id = ? WHERE memory_id = ?",
+                        (survivor_id, dup_id),
+                    )
+
+                # Tags
+                if has_tags_table:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO memory_tags (memory_id, tag, prefix)
+                        SELECT ?, tag, prefix FROM memory_tags WHERE memory_id = ?
+                        """,
+                        (survivor_id, dup_id),
+                    )
+                    conn.execute("DELETE FROM memory_tags WHERE memory_id = ?", (dup_id,))
+
+                # Retrieval feedback
+                if has_feedback_table:
+                    conn.execute(
+                        "UPDATE retrieval_feedback SET memory_id = ? WHERE memory_id = ?",
+                        (survivor_id, dup_id),
+                    )
+
+                # Metadata
+                try:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO memory_metadata (
+                            memory_id, record_type, status, confidence, confidence_label,
+                            valid_from, valid_until, metadata_schema_version, validation_issues_json
+                        )
+                        SELECT ?, record_type, status, confidence, confidence_label,
+                               valid_from, valid_until, metadata_schema_version, validation_issues_json
+                        FROM memory_metadata WHERE memory_id = ?
+                        """,
+                        (survivor_id, dup_id),
+                    )
+                    conn.execute("DELETE FROM memory_metadata WHERE memory_id = ?", (dup_id,))
+                except sqlite3.OperationalError:
+                    pass
+
+                # Run memory links
+                try:
+                    conn.execute(
+                        "UPDATE run_memory_links SET memory_id = ? WHERE memory_id = ?",
+                        (survivor_id, dup_id),
+                    )
+                except sqlite3.OperationalError:
+                    pass
+
+                # Clean search index, insertions, embeddings, utility shadow
+                try:
+                    conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (dup_id,))
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("DELETE FROM memory_insertions WHERE memory_id = ?", (dup_id,))
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (dup_id,))
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("DELETE FROM memory_utility_shadow WHERE memory_id = ?", (dup_id,))
+                except sqlite3.OperationalError:
+                    pass
+
+                # Record tombstone for audit preservation
+                if has_tombstones_table:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO memory_tombstones (
+                            forgotten_id, namespace, kind, deleted_at, root_forget_id, cause
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            dup_id,
+                            c_ns,
+                            dup["kind"],
+                            now_iso,
+                            survivor_id,
+                            "namespace_case_collapse",
+                        ),
+                    )
+
+                # Delete duplicate memory row
+                conn.execute("DELETE FROM memories WHERE id = ?", (dup_id,))
+
+            # Ensure survivor tags in memory_tags table include all merged tags
+            if has_tags_table:
+                for tag in merged_tags:
+                    prefix = tag.split(":", 1)[0] if ":" in tag else None
+                    conn.execute(
+                        "INSERT OR IGNORE INTO memory_tags (memory_id, tag, prefix) VALUES (?, ?, ?)",
+                        (survivor_id, tag, prefix),
+                    )
+            try:
+                fts_exists = conn.execute("SELECT 1 FROM memories_fts WHERE memory_id = ?", (survivor_id,)).fetchone()
+                if not fts_exists:
+                    conn.execute(
+                        "INSERT INTO memories_fts (memory_id, title, content) VALUES (?, ?, ?)",
+                        (survivor_id, survivor["title"], survivor["content"]),
+                    )
+            except sqlite3.OperationalError:
+                pass
+
+        # Update namespace of remaining memories to canonical lowercase
+        mems = conn.execute("SELECT id, namespace FROM memories WHERE namespace LIKE 'project:%'").fetchall()
+        for row in mems:
+            c_ns = canonical_namespace(row["namespace"])
+            if c_ns != row["namespace"]:
+                conn.execute(
+                    "UPDATE memories SET namespace = ? WHERE id = ? AND namespace = ?",
+                    (c_ns, row["id"], row["namespace"]),
                 )
 
-    # Update namespace in retrieval_feedback
-    fbs = conn.execute(
-        """
-        SELECT feedback_id, namespace
-        FROM retrieval_feedback
-        WHERE namespace LIKE 'project:%'
-        """
-    ).fetchall()
-    for fb in fbs:
-        raw_ns = fb["namespace"]
-        c_ns = canonical_namespace(raw_ns)
-        if c_ns != raw_ns:
-            conn.execute(
-                "UPDATE retrieval_feedback SET namespace = ? WHERE feedback_id = ?",
-                (c_ns, fb["feedback_id"]),
-            )
+        # Update target_namespace in memory_edges
+        if has_edges_table:
+            edges = conn.execute(
+                """
+                SELECT source_id, target_id, relation, target_namespace
+                FROM memory_edges
+                WHERE target_namespace LIKE 'project:%'
+                """
+            ).fetchall()
+            for edge in edges:
+                raw_tns = edge["target_namespace"]
+                if raw_tns:
+                    c_tns = canonical_namespace(raw_tns)
+                    if c_tns != raw_tns:
+                        conn.execute(
+                            """
+                            UPDATE memory_edges
+                            SET target_namespace = ?
+                            WHERE source_id = ? AND target_id = ? AND relation = ?
+                            """,
+                            (c_tns, edge["source_id"], edge["target_id"], edge["relation"]),
+                        )
 
-    # Update namespace in memory_tombstones
-    tbs = conn.execute(
-        """
-        SELECT forgotten_id, namespace
-        FROM memory_tombstones
-        WHERE namespace LIKE 'project:%'
-        """
-    ).fetchall()
-    for tb in tbs:
-        raw_ns = tb["namespace"]
-        c_ns = canonical_namespace(raw_ns)
-        if c_ns != raw_ns:
-            conn.execute(
-                "UPDATE memory_tombstones SET namespace = ? WHERE forgotten_id = ?",
-                (c_ns, tb["forgotten_id"]),
-            )
+        # Update namespace in retrieval_feedback
+        if has_feedback_table:
+            fbs = conn.execute(
+                """
+                SELECT feedback_id, namespace
+                FROM retrieval_feedback
+                WHERE namespace LIKE 'project:%'
+                """
+            ).fetchall()
+            for fb in fbs:
+                raw_ns = fb["namespace"]
+                c_ns = canonical_namespace(raw_ns)
+                if c_ns != raw_ns:
+                    conn.execute(
+                        "UPDATE retrieval_feedback SET namespace = ? WHERE feedback_id = ?",
+                        (c_ns, fb["feedback_id"]),
+                    )
+
+        # Update namespace in memory_tombstones
+        if has_tombstones_table:
+            tbs = conn.execute(
+                """
+                SELECT forgotten_id, namespace
+                FROM memory_tombstones
+                WHERE namespace LIKE 'project:%'
+                """
+            ).fetchall()
+            for tb in tbs:
+                raw_ns = tb["namespace"]
+                c_ns = canonical_namespace(raw_ns)
+                if c_ns != raw_ns:
+                    conn.execute(
+                        "UPDATE memory_tombstones SET namespace = ? WHERE forgotten_id = ?",
+                        (c_ns, tb["forgotten_id"]),
+                    )
+    finally:
+        if has_feedback_table:
+            if saved_triggers:
+                for trg_sql in saved_triggers:
+                    conn.execute(trg_sql)
+            else:
+                _ensure_retrieval_feedback_schema(conn)
 
 
 def _coerce_schema_migration(
