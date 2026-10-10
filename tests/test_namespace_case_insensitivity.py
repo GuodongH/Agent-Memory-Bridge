@@ -783,3 +783,293 @@ def test_project_resolution_with_legacy_mixed_case_bindings(tmp_path: Path) -> N
     collision_res = resolve_project_context(repo_dir, snapshot_root=snapshot_root)
     assert collision_res["status"] == "ambiguous_binding"
     assert collision_res["ambiguity"]["reason"] == "binding_collision"
+
+
+def test_migration_with_existing_run_memory_links_preserves_attribution_and_triggers(tmp_path: Path) -> None:
+    db_path = tmp_path / "run_links.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        content = "Attributed memory content"
+        h = exact_content_hash(content)
+
+        # Survivor: project:Moebius
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-surv-run', 'project:Moebius', 'memory', 'Surv', ?, 'h1', ?, '2026-01-01T00:00:00Z')
+            """,
+            (content, h),
+        )
+        # Duplicate: project:MOEBIUS
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-dup-run', 'project:MOEBIUS', 'memory', 'Dup', ?, 'h1', ?, '2026-01-02T00:00:00Z')
+            """,
+            (content, h),
+        )
+
+        # Set up an agent run and work item
+        run_id = "run_" + "1" * 32
+        work_item_id = "work_" + "1" * 32
+        event_id = "evt_" + "1" * 32
+        conn.execute(
+            """
+            INSERT INTO agent_runs (
+                run_id, workspace_key, root_goal, idempotency_key_digest, request_digest, created_at
+            ) VALUES (?, 'default', 'Test run goal', ?, ?, '2026-01-02T00:00:00Z')
+            """,
+            (run_id, "a" * 64, "b" * 64),
+        )
+        conn.execute(
+            """
+            INSERT INTO run_work_items (
+                work_item_id, run_id, goal, created_at
+            ) VALUES (?, ?, 'Item goal', '2026-01-02T00:00:00Z')
+            """,
+            (work_item_id, run_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO run_events (
+                event_id, run_id, work_item_id, sequence, event_type, summary,
+                idempotency_key_digest, request_digest, created_at
+            ) VALUES (?, ?, ?, 1, 'memory_recalled', 'Recalled memory', ?, ?, '2026-01-02T00:00:01Z')
+            """,
+            (event_id, run_id, work_item_id, "c" * 64, "d" * 64),
+        )
+
+        # Insert run_memory_links referencing duplicate mem-dup-run
+        link_id = "link_" + "1" * 32
+        conn.execute(
+            """
+            INSERT INTO run_memory_links (
+                link_id, run_id, work_item_id, event_id, outcome_id, memory_id,
+                exact_content_version, receipt_hash, exposure_rank, feedback_id,
+                relation, review_required, idempotency_key_digest, request_digest, created_at
+            ) VALUES (?, ?, ?, ?, NULL, 'mem-dup-run', ?, ?, 1, NULL, 'recalled', 0, ?, ?, '2026-01-02T00:00:01Z')
+            """,
+            (link_id, run_id, work_item_id, event_id, h, "e" * 64, "f" * 64, "1" * 64),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open with MemoryStore: migration runs and MUST NOT raise IntegrityError
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    with store._connect() as check_conn:
+        # Original run attribution preserved
+        link_row = check_conn.execute(
+            "SELECT memory_id, relation FROM run_memory_links WHERE link_id = ?", (link_id,)
+        ).fetchone()
+        assert link_row["memory_id"] == "mem-dup-run"
+        assert link_row["relation"] == "recalled"
+
+        # run_memory_links append-only trigger remains active
+        with pytest.raises(sqlite3.IntegrityError, match="run_memory_links is append-only"):
+            check_conn.execute("UPDATE run_memory_links SET relation = 'applied' WHERE link_id = ?", (link_id,))
+
+        # Tombstone recorded for mem-dup-run
+        tomb = check_conn.execute(
+            "SELECT forgotten_id, root_forget_id, cause FROM memory_tombstones WHERE forgotten_id = 'mem-dup-run'"
+        ).fetchone()
+        assert tomb is not None
+        assert tomb["root_forget_id"] == "mem-surv-run"
+        assert tomb["cause"] == "namespace_case_collapse"
+
+
+def test_reference_rewriting_handles_exact_content_collisions_safely(tmp_path: Path) -> None:
+    from agent_mem_bridge.database_maintenance import rebuild_database_projections
+    from agent_mem_bridge.record_projection import sync_record_projection
+
+    db_path = tmp_path / "collision_rewrite.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        base_content = "Base rule content"
+        h_base = exact_content_hash(base_content)
+
+        # A in project:Moebius
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-A', 'project:Moebius', 'memory', 'A', ?, 'ha', ?, '2026-01-01T00:00:00Z')
+            """,
+            (base_content, h_base),
+        )
+        # B in project:MOEBIUS
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-B', 'project:MOEBIUS', 'memory', 'B', ?, 'hb', ?, '2026-01-02T00:00:00Z')
+            """,
+            (base_content, h_base),
+        )
+
+        # C1 in project:consumer depending on mem-A
+        c1_content = "Consumer rule\ndepends_on: mem-A"
+        h_c1 = exact_content_hash(c1_content)
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-C1', 'project:consumer', 'memory', 'C1', ?, '["tag:c1"]', 'hc1', ?, '2026-01-03T00:00:00Z')
+            """,
+            (c1_content, h_c1),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="mem-C1",
+            namespace="project:consumer",
+            content=c1_content,
+            tags=["tag:c1"],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+
+        # C2 in project:consumer depending on mem-B
+        c2_content = "Consumer rule\ndepends_on: mem-B"
+        h_c2 = exact_content_hash(c2_content)
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-C2', 'project:consumer', 'memory', 'C2', ?, '["tag:c2-extra"]', 'hc2', ?, '2026-01-04T00:00:00Z')
+            """,
+            (c2_content, h_c2),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="mem-C2",
+            namespace="project:consumer",
+            content=c2_content,
+            tags=["tag:c2-extra"],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open with MemoryStore: MUST NOT raise UNIQUE constraint failed
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    with store._connect() as check_conn:
+        # C1 survived and merged C2's tag
+        c1_row = check_conn.execute("SELECT tags_json, content FROM memories WHERE id = 'mem-C1'").fetchone()
+        assert c1_row is not None
+        c1_tags = json.loads(c1_row["tags_json"])
+        assert "tag:c1" in c1_tags
+        assert "tag:c2-extra" in c1_tags
+        assert "depends_on: mem-A" in c1_row["content"]
+
+        # C2 was collapsed
+        c2_row = check_conn.execute("SELECT 1 FROM memories WHERE id = 'mem-C2'").fetchone()
+        assert c2_row is None
+
+        # Tombstone recorded for C2 pointing to C1
+        tomb_c2 = check_conn.execute(
+            "SELECT forgotten_id, root_forget_id, cause FROM memory_tombstones WHERE forgotten_id = 'mem-C2'"
+        ).fetchone()
+        assert tomb_c2 is not None
+        assert tomb_c2["root_forget_id"] == "mem-C1"
+        assert tomb_c2["cause"] == "reference_rewrite_collapse"
+
+    # Verify projections rebuild cleanly
+    rebuild_database_projections(db_path)
+
+    with store._connect() as check_conn:
+        tag_rows = check_conn.execute("SELECT tag FROM memory_tags WHERE memory_id = 'mem-C1'").fetchall()
+        tags = {r["tag"] for r in tag_rows}
+        assert "tag:c1" in tags
+        assert "tag:c2-extra" in tags
+
+        edge = check_conn.execute(
+            "SELECT target_id, target_exists FROM memory_edges WHERE source_id = 'mem-C1'"
+        ).fetchone()
+        assert edge["target_id"] == "mem-A"
+        assert edge["target_exists"] == 1
+
+
+def test_migration_leaves_unrelated_historical_prose_and_commands_intact(tmp_path: Path) -> None:
+    db_path = tmp_path / "prose_intact.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        base = "Base rule"
+        h = exact_content_hash(base)
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-orig', 'project:Moebius', 'memory', 'Orig', ?, 'h1', ?, '2026-01-01T00:00:00Z')
+            """,
+            (base, h),
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-dup-old', 'project:MOEBIUS', 'memory', 'Dup', ?, 'h1', ?, '2026-01-02T00:00:00Z')
+            """,
+            (base, h),
+        )
+
+        # Historical incident notes in domain:incident-notes mentioning mem-dup-old
+        incident_content = (
+            "Incident description for outage\n"
+            "File affected: /backups/mem-dup-old.json\n"
+            "Action taken: inspect --id mem-dup-old\n"
+            "Notes: mem-dup-old investigated."
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('inc-1', 'domain:incident-notes', 'memory', 'Incident 1', ?, 'hinc', ?, '2026-01-03T00:00:00Z')
+            """,
+            (incident_content, exact_content_hash(incident_content)),
+        )
+
+        # Memory with BOTH a lineage relation and notes
+        dep_content = (
+            "Rule with dependency\n"
+            "depends_on: mem-dup-old\n"
+            "notes: mentions mem-dup-old in note line\n"
+            "command: run mem-dup-old"
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('dep-1', 'project:consumer', 'memory', 'Dep 1', ?, 'hdep', ?, '2026-01-04T00:00:00Z')
+            """,
+            (dep_content, exact_content_hash(dep_content)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open with MemoryStore to run migration
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    with store._connect() as check_conn:
+        inc_row = check_conn.execute("SELECT content FROM memories WHERE id = 'inc-1'").fetchone()
+        # All literal prose, filenames, and commands in inc-1 remain completely untouched
+        assert inc_row["content"] == incident_content
+
+        dep_row = check_conn.execute("SELECT content FROM memories WHERE id = 'dep-1'").fetchone()
+        # depends_on was rewritten to mem-orig
+        assert "depends_on: mem-orig" in dep_row["content"]
+        # notes and command remain untouched with mem-dup-old
+        assert "notes: mentions mem-dup-old in note line" in dep_row["content"]
+        assert "command: run mem-dup-old" in dep_row["content"]
