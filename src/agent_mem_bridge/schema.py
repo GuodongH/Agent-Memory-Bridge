@@ -382,7 +382,9 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                             new_remainder = " " + json.dumps(deduped_items)
                             modified = True
                             new_lines.append(f"{label}:{new_remainder}")
-                            continue
+                        else:
+                            new_lines.append(line)
+                        continue
                 except (json.JSONDecodeError, TypeError):
                     pass
 
@@ -390,14 +392,11 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
             changed_parts = False
             new_parts: list[str] = []
             for p in parts:
-                p_sub = p
-                for old_id, new_id in replacement_map.items():
-                    pattern = rf"\b{re.escape(old_id)}\b"
-                    if re.search(pattern, p_sub):
-                        p_sub = re.sub(pattern, new_id, p_sub)
-                        changed_parts = True
-                if p_sub and p_sub not in new_parts:
-                    new_parts.append(p_sub)
+                target = replacement_map.get(p, p)
+                if target != p:
+                    changed_parts = True
+                if target and target not in new_parts:
+                    new_parts.append(target)
 
             if changed_parts:
                 modified = True
@@ -420,6 +419,10 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
         *,
         cause: str,
     ) -> None:
+        if survivor_row["kind"] == "signal" or dup_row["kind"] == "signal":
+            return
+        if survivor_row["kind"] != dup_row["kind"]:
+            return
         survivor_id = survivor_row["id"]
         dup_id = dup_row["id"]
 
@@ -618,14 +621,14 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
         )
         rows = cursor.fetchall()
 
-        groups: dict[tuple[str, str], list[sqlite3.Row]] = defaultdict(list)
+        groups: dict[tuple[str, str, str], list[sqlite3.Row]] = defaultdict(list)
         for row in rows:
             c_ns = canonical_namespace(row["namespace"])
             if row["kind"] != "signal" and row["exact_content_hash"]:
-                groups[(c_ns, row["exact_content_hash"])].append(row)
+                groups[(c_ns, row["kind"], row["exact_content_hash"])].append(row)
 
         initial_replacements: dict[str, str] = {}
-        for (c_ns, _), member_rows in groups.items():
+        for (c_ns, _kind, _hash), member_rows in groups.items():
             if len(member_rows) <= 1:
                 continue
             survivor = member_rows[0]
@@ -676,6 +679,39 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                     new_ech = exact_content_hash(new_content) if has_exact_content_hash else new_ch
                     ref_c_ns = canonical_namespace(fresh_ref["namespace"])
 
+                    if fresh_ref["kind"] == "signal":
+                        if has_exact_content_hash:
+                            conn.execute(
+                                """
+                                UPDATE memories
+                                SET content = ?, content_hash = ?, exact_content_hash = ?
+                                WHERE id = ?
+                                """,
+                                (new_content, new_ch, new_ech, fresh_ref["id"]),
+                            )
+                        elif has_content_hash:
+                            conn.execute(
+                                """
+                                UPDATE memories
+                                SET content = ?, content_hash = ?
+                                WHERE id = ?
+                                """,
+                                (new_content, new_ch, fresh_ref["id"]),
+                            )
+                        else:
+                            conn.execute(
+                                "UPDATE memories SET content = ? WHERE id = ?",
+                                (new_content, fresh_ref["id"]),
+                            )
+                        try:
+                            conn.execute(
+                                "UPDATE memories_fts SET content = ? WHERE memory_id = ?",
+                                (new_content, fresh_ref["id"]),
+                            )
+                        except sqlite3.OperationalError:
+                            pass
+                        continue
+
                     collision_row = None
                     if has_exact_content_hash:
                         candidates = conn.execute(
@@ -683,12 +719,12 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                             SELECT id, namespace, kind, {title_col}, content, {tags_col}, {hash_col}, created_at, rowid,
                                    {actor_col}, {source_col}, {candidate_col}
                             FROM memories
-                            WHERE exact_content_hash = ? AND id != ?
+                            WHERE exact_content_hash = ? AND id != ? AND kind = ?
                             """,
-                            (new_ech, fresh_ref["id"]),
+                            (new_ech, fresh_ref["id"], fresh_ref["kind"]),
                         ).fetchall()
                         for cand in candidates:
-                            if canonical_namespace(cand["namespace"]) == ref_c_ns:
+                            if cand["kind"] == fresh_ref["kind"] and canonical_namespace(cand["namespace"]) == ref_c_ns:
                                 collision_row = cand
                                 break
                     elif has_content_hash:
@@ -697,12 +733,12 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                             SELECT id, namespace, kind, {title_col}, content, {tags_col}, {hash_col}, created_at, rowid,
                                    {actor_col}, {source_col}, {candidate_col}
                             FROM memories
-                            WHERE content_hash = ? AND id != ?
+                            WHERE content_hash = ? AND id != ? AND kind = ?
                             """,
-                            (new_ch, fresh_ref["id"]),
+                            (new_ch, fresh_ref["id"], fresh_ref["kind"]),
                         ).fetchall()
                         for cand in candidates:
-                            if canonical_namespace(cand["namespace"]) == ref_c_ns:
+                            if cand["kind"] == fresh_ref["kind"] and canonical_namespace(cand["namespace"]) == ref_c_ns:
                                 collision_row = cand
                                 break
 
@@ -764,6 +800,31 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                                 ref_c_ns,
                                 cause="reference_rewrite_collapse",
                             )
+                            fresh_surv = conn.execute(
+                                f"""
+                                SELECT id, namespace, kind, {title_col}, content, {tags_col}, {hash_col}, created_at, rowid,
+                                       {actor_col}, {source_col}, {candidate_col}
+                                FROM memories
+                                WHERE id = ?
+                                """,
+                                (surv["id"],),
+                            ).fetchone()
+                            if fresh_surv:
+                                surv_tags = _safe_load_tags(fresh_surv["tags_json"])
+                                try:
+                                    sync_record_projection(
+                                        conn,
+                                        memory_id=fresh_surv["id"],
+                                        namespace=ref_c_ns,
+                                        content=fresh_surv["content"],
+                                        tags=surv_tags,
+                                        kind=fresh_surv["kind"],
+                                        actor=fresh_surv["actor"],
+                                        source_app=fresh_surv["source_app"],
+                                        is_learning_candidate=bool(fresh_surv["is_learning_candidate"]),
+                                    )
+                                except sqlite3.OperationalError:
+                                    pass
                             pending_replacements[col_dup["id"]] = surv["id"]
                         else:
                             surv = fresh_ref
@@ -804,21 +865,31 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                                 )
                             except sqlite3.OperationalError:
                                 pass
-                            surv_tags = _safe_load_tags(surv["tags_json"])
-                            try:
-                                sync_record_projection(
-                                    conn,
-                                    memory_id=surv["id"],
-                                    namespace=ref_c_ns,
-                                    content=new_content,
-                                    tags=surv_tags,
-                                    kind=surv["kind"],
-                                    actor=surv["actor"],
-                                    source_app=surv["source_app"],
-                                    is_learning_candidate=bool(surv["is_learning_candidate"]),
-                                )
-                            except sqlite3.OperationalError:
-                                pass
+                            fresh_surv = conn.execute(
+                                f"""
+                                SELECT id, namespace, kind, {title_col}, content, {tags_col}, {hash_col}, created_at, rowid,
+                                       {actor_col}, {source_col}, {candidate_col}
+                                FROM memories
+                                WHERE id = ?
+                                """,
+                                (surv["id"],),
+                            ).fetchone()
+                            if fresh_surv:
+                                surv_tags = _safe_load_tags(fresh_surv["tags_json"])
+                                try:
+                                    sync_record_projection(
+                                        conn,
+                                        memory_id=fresh_surv["id"],
+                                        namespace=ref_c_ns,
+                                        content=new_content,
+                                        tags=surv_tags,
+                                        kind=fresh_surv["kind"],
+                                        actor=fresh_surv["actor"],
+                                        source_app=fresh_surv["source_app"],
+                                        is_learning_candidate=bool(fresh_surv["is_learning_candidate"]),
+                                    )
+                                except sqlite3.OperationalError:
+                                    pass
                             pending_replacements[col_dup["id"]] = surv["id"]
 
         # Update namespace of remaining memories to canonical lowercase

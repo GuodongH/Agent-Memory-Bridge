@@ -1041,10 +1041,11 @@ def test_migration_leaves_unrelated_historical_prose_and_commands_intact(tmp_pat
             (incident_content, exact_content_hash(incident_content)),
         )
 
-        # Memory with BOTH a lineage relation and notes
+        # Memory with BOTH a lineage relation, compound reference path, and notes
         dep_content = (
             "Rule with dependency\n"
             "depends_on: mem-dup-old\n"
+            "evidence_refs: /backups/mem-dup-old.json\n"
             "notes: mentions mem-dup-old in note line\n"
             "command: run mem-dup-old"
         )
@@ -1070,6 +1071,278 @@ def test_migration_leaves_unrelated_historical_prose_and_commands_intact(tmp_pat
         dep_row = check_conn.execute("SELECT content FROM memories WHERE id = 'dep-1'").fetchone()
         # depends_on was rewritten to mem-orig
         assert "depends_on: mem-orig" in dep_row["content"]
+        # Compound evidence_refs path containing duplicate ID is NOT partially rewritten
+        assert "evidence_refs: /backups/mem-dup-old.json" in dep_row["content"]
         # notes and command remain untouched with mem-dup-old
         assert "notes: mentions mem-dup-old in note line" in dep_row["content"]
         assert "command: run mem-dup-old" in dep_row["content"]
+
+
+def test_reference_collision_preserves_signals_and_durable_memories_separately(tmp_path: Path) -> None:
+    db_path = tmp_path / "signal_collision.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        base = "Base task rule"
+        h_base = exact_content_hash(base)
+
+        # A in project:Moebius, B in project:MOEBIUS
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-A', 'project:Moebius', 'memory', 'A', ?, 'ha', ?, '2026-01-01T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-B', 'project:MOEBIUS', 'memory', 'B', ?, 'hb', ?, '2026-01-02T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+
+        sig1_content = "Pending signal payload\ndepends_on: mem-A"
+        sig2_content = "Pending signal payload\ndepends_on: mem-B"
+        mem_content = "Pending signal payload\ndepends_on: mem-A"
+
+        # Signal 1 (created 2026-01-03)
+        conn.execute(
+            """
+            INSERT INTO memories (
+                id, namespace, kind, title, content, content_hash, exact_content_hash,
+                correlation_id, signal_status, created_at
+            ) VALUES (
+                'sig-1', 'project:consumer', 'signal', 'Sig 1', ?, 'hs1', ?,
+                'job-a', 'pending', '2026-01-03T00:00:00Z'
+            )
+            """,
+            (sig1_content, exact_content_hash(sig1_content)),
+        )
+
+        # Signal 2 (created 2026-01-04)
+        conn.execute(
+            """
+            INSERT INTO memories (
+                id, namespace, kind, title, content, content_hash, exact_content_hash,
+                correlation_id, signal_status, created_at
+            ) VALUES (
+                'sig-2', 'project:consumer', 'signal', 'Sig 2', ?, 'hs2', ?,
+                'job-b', 'pending', '2026-01-04T00:00:00Z'
+            )
+            """,
+            (sig2_content, exact_content_hash(sig2_content)),
+        )
+
+        # Durable memory matching Signal 1's content (created 2026-01-05)
+        conn.execute(
+            """
+            INSERT INTO memories (
+                id, namespace, kind, title, content, content_hash, exact_content_hash, created_at
+            ) VALUES (
+                'mem-consumer', 'project:consumer', 'memory', 'Consumer Mem', ?, 'hm', ?, '2026-01-05T00:00:00Z'
+            )
+            """,
+            (mem_content, exact_content_hash(mem_content)),
+        )
+
+        # Signal 3 (older than durable memory, created 2026-01-06) with depends_on: mem-A
+        # And Durable memory 2 (created 2026-01-07) with depends_on: mem-B (which rewrites to mem-A)
+        sig3_content = "Cross kind task\ndepends_on: mem-A"
+        mem2_content = "Cross kind task\ndepends_on: mem-B"
+        conn.execute(
+            """
+            INSERT INTO memories (
+                id, namespace, kind, title, content, content_hash, exact_content_hash,
+                correlation_id, signal_status, created_at
+            ) VALUES (
+                'sig-3', 'project:consumer', 'signal', 'Sig 3', ?, 'hs3', ?,
+                'job-c', 'pending', '2026-01-06T00:00:00Z'
+            )
+            """,
+            (sig3_content, exact_content_hash(sig3_content)),
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (
+                id, namespace, kind, title, content, content_hash, exact_content_hash, created_at
+            ) VALUES (
+                'mem-cross', 'project:consumer', 'memory', 'Cross Mem', ?, 'hm2', ?, '2026-01-07T00:00:00Z'
+            )
+            """,
+            (mem2_content, exact_content_hash(mem2_content)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open store: migration runs and MUST NOT delete any Signal or merge Signal with Memory
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    with store._connect() as check_conn:
+        # Both original signals in project:consumer survive
+        s1 = check_conn.execute("SELECT kind, content FROM memories WHERE id = 'sig-1'").fetchone()
+        s2 = check_conn.execute("SELECT kind, content FROM memories WHERE id = 'sig-2'").fetchone()
+        assert s1 is not None and s1["kind"] == "signal"
+        assert s2 is not None and s2["kind"] == "signal"
+        assert "depends_on: mem-A" in s1["content"]
+        assert "depends_on: mem-A" in s2["content"]
+
+        # Durable memory matching Signal content also survives
+        m = check_conn.execute("SELECT kind, content FROM memories WHERE id = 'mem-consumer'").fetchone()
+        assert m is not None and m["kind"] == "memory"
+        assert "depends_on: mem-A" in m["content"]
+
+        # Cross-kind Signal 3 and Durable Memory 2 both survive
+        s3 = check_conn.execute("SELECT kind, content FROM memories WHERE id = 'sig-3'").fetchone()
+        m2 = check_conn.execute("SELECT kind, content FROM memories WHERE id = 'mem-cross'").fetchone()
+        assert s3 is not None and s3["kind"] == "signal"
+        assert m2 is not None and m2["kind"] == "memory"
+        assert "depends_on: mem-A" in s3["content"]
+        assert "depends_on: mem-A" in m2["content"]
+
+        # Signals are never recorded as tombstones
+        tombs = check_conn.execute(
+            "SELECT forgotten_id FROM memory_tombstones WHERE forgotten_id IN ('sig-1', 'sig-2', 'sig-3', 'mem-consumer', 'mem-cross')"
+        ).fetchall()
+        assert len(tombs) == 0
+
+
+def test_reference_collision_both_creation_orderings_preserve_merged_tags_in_active_recall(tmp_path: Path) -> None:
+    from agent_mem_bridge.record_projection import sync_record_projection
+
+    db_path = tmp_path / "tags_orderings.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        base = "Base rule content"
+        h_base = exact_content_hash(base)
+
+        # A in project:Moebius, B in project:MOEBIUS
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-A', 'project:Moebius', 'memory', 'A', ?, 'ha', ?, '2026-01-01T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-B', 'project:MOEBIUS', 'memory', 'B', ?, 'hb', ?, '2026-01-02T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+
+        # Ordering 1 (col_order <= ref_order):
+        # ord1-surv created earlier (2026-01-03) with depends_on: mem-A and tag:ord1-surv
+        # ord1-dup created later (2026-01-04) with depends_on: mem-B and tag:ord1-dup
+        c1_content = "Order 1 Consumer\ndepends_on: mem-A"
+        c2_content = "Order 1 Consumer\ndepends_on: mem-B"
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+            VALUES ('ord1-surv', 'project:consumer-1', 'memory', 'Ord 1 Surv', ?, '["tag:ord1-surv"]', 'ho1', ?, '2026-01-03T00:00:00Z')
+            """,
+            (c1_content, exact_content_hash(c1_content)),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="ord1-surv",
+            namespace="project:consumer-1",
+            content=c1_content,
+            tags=["tag:ord1-surv"],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+            VALUES ('ord1-dup', 'project:consumer-1', 'memory', 'Ord 1 Dup', ?, '["tag:ord1-dup"]', 'ho2', ?, '2026-01-04T00:00:00Z')
+            """,
+            (c2_content, exact_content_hash(c2_content)),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="ord1-dup",
+            namespace="project:consumer-1",
+            content=c2_content,
+            tags=["tag:ord1-dup"],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+
+        # Ordering 2 (col_order > ref_order - maintainer reproduction):
+        # ord2-surv created earlier (2026-01-05) with depends_on: mem-B and topic:original
+        # ord2-col created later (2026-01-06) with depends_on: mem-A and topic:keep-me
+        c3_content = "Order 2 Consumer\ndepends_on: mem-B"
+        c4_content = "Order 2 Consumer\ndepends_on: mem-A"
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+            VALUES ('ord2-surv', 'project:consumer-2', 'memory', 'Ord 2 Surv', ?, '["topic:original"]', 'ho3', ?, '2026-01-05T00:00:00Z')
+            """,
+            (c3_content, exact_content_hash(c3_content)),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="ord2-surv",
+            namespace="project:consumer-2",
+            content=c3_content,
+            tags=["topic:original"],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+            VALUES ('ord2-col', 'project:consumer-2', 'memory', 'Ord 2 Col', ?, '["topic:keep-me"]', 'ho4', ?, '2026-01-06T00:00:00Z')
+            """,
+            (c4_content, exact_content_hash(c4_content)),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="ord2-col",
+            namespace="project:consumer-2",
+            content=c4_content,
+            tags=["topic:keep-me"],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open store - migration runs
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    # BEFORE any rebuild_database_projections: verify tag-filtered recall works immediately
+    # Ordering 1
+    recall_ord1_surv = store.recall(query="Consumer", namespace="project:consumer-1", tags_any=["tag:ord1-surv"])
+    recall_ord1_dup = store.recall(query="Consumer", namespace="project:consumer-1", tags_any=["tag:ord1-dup"])
+    assert len(recall_ord1_surv["items"]) == 1
+    assert len(recall_ord1_dup["items"]) == 1
+    assert recall_ord1_surv["items"][0]["id"] == "ord1-surv"
+    assert recall_ord1_dup["items"][0]["id"] == "ord1-surv"
+
+    # Ordering 2
+    recall_ord2_orig = store.recall(query="Consumer", namespace="project:consumer-2", tags_any=["topic:original"])
+    recall_ord2_keep = store.recall(query="Consumer", namespace="project:consumer-2", tags_any=["topic:keep-me"])
+    assert len(recall_ord2_orig["items"]) == 1
+    assert len(recall_ord2_keep["items"]) == 1
+    assert recall_ord2_orig["items"][0]["id"] == "ord2-surv"
+    assert recall_ord2_keep["items"][0]["id"] == "ord2-surv"
