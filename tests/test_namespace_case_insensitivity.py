@@ -171,7 +171,16 @@ def test_migration_collapses_multiple_mixed_case_duplicates_into_survivor(tmp_pa
         from agent_mem_bridge.schema import init_db
 
         init_db(conn)
-        content = "Identical content in Moebius and MOEBIUS"
+
+        # Target node
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('target-node', 'project:Moebius', 'memory', 'Target Node', 'Target content', 'ht', 'ht', '2026-01-01T00:00:00Z')
+            """
+        )
+
+        content = "Identical content in Moebius and MOEBIUS\nsupersedes: target-node"
         h = exact_content_hash(content)
 
         # Older record: project:Moebius (survivor)
@@ -1690,3 +1699,158 @@ def test_migration_scopes_self_reference_cleanup_and_preserves_unrelated_histori
             "SELECT 1 FROM memory_revisions WHERE predecessor_id = 'mem-unrelated' AND successor_id = 'mem-unrelated'"
         ).fetchone()
         assert unrelated_rev is not None
+
+
+def test_migration_collapse_recomputes_survivor_projection_and_preserves_cascade_forget(tmp_path: Path) -> None:
+    from agent_mem_bridge.database_maintenance import rebuild_database_projections
+    from agent_mem_bridge.record_projection import sync_record_projection
+
+    def setup_fixture(db_file: Path) -> None:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        try:
+            from agent_mem_bridge.schema import init_db
+
+            init_db(conn)
+
+            # 1. Target record
+            target_content = "Target record content"
+            h_target = exact_content_hash(target_content)
+            conn.execute(
+                """
+                INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+                VALUES ('mem-target', 'project:Moebius', 'memory', 'Target', ?, 'ht', ?, '2026-01-01T00:00:00Z')
+                """,
+                (target_content, h_target),
+            )
+            sync_record_projection(
+                conn,
+                memory_id="mem-target",
+                namespace="project:Moebius",
+                content=target_content,
+                tags=[],
+                kind="memory",
+                actor=None,
+                source_app=None,
+                is_learning_candidate=False,
+            )
+
+            # 2. Older record A in project:Moebius with [kind:belief-candidate] (machine_owned = 0)
+            content_rule = "record_type: belief-candidate\nevidence_refs: mem-target"
+            h_rule = exact_content_hash(content_rule)
+            tags_a = ["kind:belief-candidate"]
+            conn.execute(
+                """
+                INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+                VALUES ('mem-A', 'project:Moebius', 'memory', 'Rule A', ?, ?, 'ha', ?, '2026-01-02T00:00:00Z')
+                """,
+                (content_rule, json.dumps(tags_a), h_rule),
+            )
+            sync_record_projection(
+                conn,
+                memory_id="mem-A",
+                namespace="project:Moebius",
+                content=content_rule,
+                tags=tags_a,
+                kind="memory",
+                actor=None,
+                source_app=None,
+                is_learning_candidate=False,
+            )
+
+            # 3. Newer duplicate record B in project:MOEBIUS with [kind:belief-candidate, source:consolidation] (machine_owned = 1)
+            tags_b = ["kind:belief-candidate", "source:consolidation"]
+            conn.execute(
+                """
+                INSERT INTO memories (id, namespace, kind, title, content, tags_json, content_hash, exact_content_hash, created_at)
+                VALUES ('mem-B', 'project:MOEBIUS', 'memory', 'Rule B', ?, ?, 'hb', ?, '2026-01-03T00:00:00Z')
+                """,
+                (content_rule, json.dumps(tags_b), h_rule),
+            )
+            sync_record_projection(
+                conn,
+                memory_id="mem-B",
+                namespace="project:MOEBIUS",
+                content=content_rule,
+                tags=tags_b,
+                kind="memory",
+                actor=None,
+                source_app=None,
+                is_learning_candidate=False,
+            )
+
+            conn.commit()
+        finally:
+            conn.close()
+
+    # Case 1: Validate projection properties immediately on first open, second open, and post rebuild
+    db_path1 = tmp_path / "survivor_projection_check.db"
+    setup_fixture(db_path1)
+
+    # First open
+    store1 = MemoryStore(db_path1, log_dir=tmp_path / "logs1")
+    with store1._connect() as check_conn:
+        row_a = check_conn.execute("SELECT tags_json FROM memories WHERE id = 'mem-A'").fetchone()
+        merged_tags = json.loads(row_a["tags_json"])
+        assert "kind:belief-candidate" in merged_tags
+        assert "source:consolidation" in merged_tags
+
+        # Edge must immediately have machine_owned == 1 on first open
+        edge_1 = check_conn.execute(
+            "SELECT machine_owned, relation, target_exists, target_namespace FROM memory_edges WHERE source_id = 'mem-A' AND target_id = 'mem-target'"
+        ).fetchone()
+        assert edge_1 is not None
+        assert edge_1["machine_owned"] == 1
+        assert edge_1["target_exists"] == 1
+        assert edge_1["target_namespace"] == "project:moebius"
+
+        meta_1 = check_conn.execute("SELECT record_type FROM memory_metadata WHERE memory_id = 'mem-A'").fetchone()
+        assert meta_1 is not None
+        assert meta_1["record_type"] == "belief-candidate"
+
+    # Second open
+    store1_reopen = MemoryStore(db_path1, log_dir=tmp_path / "logs1")
+    with store1_reopen._connect() as check_conn:
+        edge_2 = check_conn.execute(
+            "SELECT machine_owned, target_exists FROM memory_edges WHERE source_id = 'mem-A' AND target_id = 'mem-target'"
+        ).fetchone()
+        assert edge_2 is not None
+        assert edge_2["machine_owned"] == 1
+        meta_2 = check_conn.execute("SELECT record_type FROM memory_metadata WHERE memory_id = 'mem-A'").fetchone()
+        assert meta_2 is not None
+        assert meta_2["record_type"] == "belief-candidate"
+
+    # After rebuild projections
+    rebuild_database_projections(db_path1)
+    with store1_reopen._connect() as check_conn:
+        edge_3 = check_conn.execute(
+            "SELECT machine_owned, target_exists FROM memory_edges WHERE source_id = 'mem-A' AND target_id = 'mem-target'"
+        ).fetchone()
+        assert edge_3 is not None
+        assert edge_3["machine_owned"] == 1
+        meta_3 = check_conn.execute("SELECT record_type FROM memory_metadata WHERE memory_id = 'mem-A'").fetchone()
+        assert meta_3 is not None
+        assert meta_3["record_type"] == "belief-candidate"
+
+    # Case 2: Forget cascade immediately on first open (without any rebuild_database_projections)
+    db_path2 = tmp_path / "survivor_forget_immediate.db"
+    setup_fixture(db_path2)
+    store2 = MemoryStore(db_path2, log_dir=tmp_path / "logs2")
+    res2 = store2.forget("mem-target")
+    assert res2["deleted"] is True
+    assert "mem-A" in res2["cascade_deleted_ids"]
+    with store2._connect() as check_conn:
+        rem2 = check_conn.execute("SELECT id FROM memories WHERE id IN ('mem-target', 'mem-A')").fetchall()
+        assert len(rem2) == 0
+
+    # Case 3: Forget cascade after rebuild_database_projections
+    db_path3 = tmp_path / "survivor_forget_post_rebuild.db"
+    setup_fixture(db_path3)
+    store3 = MemoryStore(db_path3, log_dir=tmp_path / "logs3")
+    rebuild_database_projections(db_path3)
+    res3 = store3.forget("mem-target")
+    assert res3["deleted"] is True
+    assert "mem-A" in res3["cascade_deleted_ids"]
+    with store3._connect() as check_conn:
+        rem3 = check_conn.execute("SELECT id FROM memories WHERE id IN ('mem-target', 'mem-A')").fetchall()
+        assert len(rem3) == 0

@@ -417,6 +417,8 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
             result += "\n"
         return result
 
+    affected_survivors: set[str] = set()
+
     def _collapse_single_duplicate(
         survivor_row: sqlite3.Row,
         dup_row: sqlite3.Row,
@@ -430,6 +432,8 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
             return
         survivor_id = survivor_row["id"]
         dup_id = dup_row["id"]
+        affected_survivors.add(survivor_id)
+        affected_survivors.discard(dup_id)
 
         survivor_tags = _safe_load_tags(survivor_row["tags_json"])
         accumulated_tags: list[str] = list(survivor_tags)
@@ -784,8 +788,8 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                             )
                         except sqlite3.OperationalError:
                             pass
-                        ref_tags = _safe_load_tags(fresh_ref["tags_json"])
-                        try:
+                        if has_edges_table:
+                            ref_tags = _safe_load_tags(fresh_ref["tags_json"])
                             sync_record_projection(
                                 conn,
                                 memory_id=fresh_ref["id"],
@@ -797,8 +801,7 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                                 source_app=fresh_ref["source_app"],
                                 is_learning_candidate=bool(fresh_ref["is_learning_candidate"]),
                             )
-                        except sqlite3.OperationalError:
-                            pass
+                        affected_survivors.add(fresh_ref["id"])
                     else:
                         ref_order = (str(fresh_ref["created_at"]), int(fresh_ref["rowid"]))
                         col_order = (str(collision_row["created_at"]), int(collision_row["rowid"]))
@@ -820,22 +823,19 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                                 """,
                                 (surv["id"],),
                             ).fetchone()
-                            if fresh_surv:
+                            if fresh_surv and has_edges_table:
                                 surv_tags = _safe_load_tags(fresh_surv["tags_json"])
-                                try:
-                                    sync_record_projection(
-                                        conn,
-                                        memory_id=fresh_surv["id"],
-                                        namespace=ref_c_ns,
-                                        content=fresh_surv["content"],
-                                        tags=surv_tags,
-                                        kind=fresh_surv["kind"],
-                                        actor=fresh_surv["actor"],
-                                        source_app=fresh_surv["source_app"],
-                                        is_learning_candidate=bool(fresh_surv["is_learning_candidate"]),
-                                    )
-                                except sqlite3.OperationalError:
-                                    pass
+                                sync_record_projection(
+                                    conn,
+                                    memory_id=fresh_surv["id"],
+                                    namespace=ref_c_ns,
+                                    content=fresh_surv["content"],
+                                    tags=surv_tags,
+                                    kind=fresh_surv["kind"],
+                                    actor=fresh_surv["actor"],
+                                    source_app=fresh_surv["source_app"],
+                                    is_learning_candidate=bool(fresh_surv["is_learning_candidate"]),
+                                )
                             pending_replacements[col_dup["id"]] = surv["id"]
                         else:
                             surv = fresh_ref
@@ -885,22 +885,19 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                                 """,
                                 (surv["id"],),
                             ).fetchone()
-                            if fresh_surv:
+                            if fresh_surv and has_edges_table:
                                 surv_tags = _safe_load_tags(fresh_surv["tags_json"])
-                                try:
-                                    sync_record_projection(
-                                        conn,
-                                        memory_id=fresh_surv["id"],
-                                        namespace=ref_c_ns,
-                                        content=new_content,
-                                        tags=surv_tags,
-                                        kind=fresh_surv["kind"],
-                                        actor=fresh_surv["actor"],
-                                        source_app=fresh_surv["source_app"],
-                                        is_learning_candidate=bool(fresh_surv["is_learning_candidate"]),
-                                    )
-                                except sqlite3.OperationalError:
-                                    pass
+                                sync_record_projection(
+                                    conn,
+                                    memory_id=fresh_surv["id"],
+                                    namespace=ref_c_ns,
+                                    content=new_content,
+                                    tags=surv_tags,
+                                    kind=fresh_surv["kind"],
+                                    actor=fresh_surv["actor"],
+                                    source_app=fresh_surv["source_app"],
+                                    is_learning_candidate=bool(fresh_surv["is_learning_candidate"]),
+                                )
                             pending_replacements[col_dup["id"]] = surv["id"]
 
         # Update namespace of remaining memories to canonical lowercase
@@ -971,6 +968,32 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                         "UPDATE memory_tombstones SET namespace = ? WHERE forgotten_id = ?",
                         (c_ns, tb["forgotten_id"]),
                     )
+
+        if has_edges_table and affected_survivors:
+            for surv_id in sorted(affected_survivors):
+                row = conn.execute(
+                    f"""
+                    SELECT id, namespace, kind, content, {tags_col},
+                           {actor_col}, {source_col}, {candidate_col}
+                    FROM memories
+                    WHERE id = ?
+                    """,
+                    (surv_id,),
+                ).fetchone()
+                if not row:
+                    continue
+                surv_tags = _safe_load_tags(row["tags_json"])
+                sync_record_projection(
+                    conn,
+                    memory_id=row["id"],
+                    namespace=row["namespace"],
+                    content=row["content"],
+                    tags=surv_tags,
+                    kind=row["kind"],
+                    actor=row["actor"],
+                    source_app=row["source_app"],
+                    is_learning_candidate=bool(row["is_learning_candidate"]),
+                )
     finally:
         if has_feedback_table:
             if saved_triggers:
