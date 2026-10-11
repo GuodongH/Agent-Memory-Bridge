@@ -272,7 +272,13 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
     from datetime import datetime, timezone
 
     from .repository import content_hash_for_content, normalize_tags
-    from .structured_record import normalize_field_name
+    from .structured_record import (
+        LINEAGE_JSON_LIST_ALIASES,
+        LINEAGE_LIST_FIELDS,
+        LINEAGE_SINGLETON_FIELDS,
+        _compact_value,
+        normalize_field_name,
+    )
 
     def _table_exists(table_name: str) -> bool:
         return (
@@ -323,26 +329,6 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
         except (json.JSONDecodeError, TypeError):
             return []
 
-    lineage_keys = frozenset(
-        {
-            "derived_from_candidate_id",
-            "derived_from_belief_id",
-            "source_candidate_id",
-            "candidate_id",
-            "target_record_id",
-            "evidence_refs",
-            "supports",
-            "contradicts",
-            "supersedes",
-            "depends_on",
-            "evidence_refs_json",
-            "supports_record_ids_json",
-            "contradicts_record_ids_json",
-            "supersedes_record_ids_json",
-            "depends_on_record_ids_json",
-        }
-    )
-
     def _rewrite_content_lineage_references(content: str, replacement_map: dict[str, str]) -> str:
         lines = str(content or "").splitlines()
         modified = False
@@ -353,28 +339,24 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                 new_lines.append(line)
                 continue
             key = normalize_field_name(label)
-            if key not in lineage_keys:
-                new_lines.append(line)
-                continue
-
             raw_remainder = remainder.strip()
             if not raw_remainder:
                 new_lines.append(line)
                 continue
 
-            new_remainder = remainder
-            if raw_remainder.startswith("[") and raw_remainder.endswith("]"):
+            if key in LINEAGE_JSON_LIST_ALIASES:
                 try:
                     parsed_json = json.loads(raw_remainder)
                     if isinstance(parsed_json, list):
                         changed_json = False
-                        deduped_items = []
+                        deduped_items: list[Any] = []
                         for item in parsed_json:
                             if isinstance(item, str):
-                                target = replacement_map.get(item, item)
-                                if target != item:
+                                cleaned = _compact_value(item)
+                                target = replacement_map.get(cleaned, cleaned)
+                                if target != cleaned:
                                     changed_json = True
-                                if target not in deduped_items:
+                                if target and target not in deduped_items:
                                     deduped_items.append(target)
                             else:
                                 deduped_items.append(item)
@@ -387,22 +369,40 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                         continue
                 except (json.JSONDecodeError, TypeError):
                     pass
+                new_lines.append(line)
+                continue
 
-            parts = [p.strip() for p in raw_remainder.split("|")]
-            changed_parts = False
-            new_parts: list[str] = []
-            for p in parts:
-                target = replacement_map.get(p, p)
-                if target != p:
-                    changed_parts = True
-                if target and target not in new_parts:
-                    new_parts.append(target)
+            if key in LINEAGE_LIST_FIELDS:
+                parts = [p.strip() for p in raw_remainder.split("|")]
+                changed_parts = False
+                new_parts: list[str] = []
+                for p in parts:
+                    cleaned = _compact_value(p)
+                    target = replacement_map.get(cleaned, cleaned)
+                    if target != cleaned:
+                        changed_parts = True
+                    if target and target not in new_parts:
+                        new_parts.append(target)
 
-            if changed_parts:
-                modified = True
-                new_remainder = " " + " | ".join(new_parts)
+                if changed_parts:
+                    modified = True
+                    new_remainder = " " + " | ".join(new_parts)
+                    new_lines.append(f"{label}:{new_remainder}")
+                else:
+                    new_lines.append(line)
+                continue
 
-            new_lines.append(f"{label}:{new_remainder}")
+            if key in LINEAGE_SINGLETON_FIELDS:
+                cleaned = _compact_value(raw_remainder)
+                target = replacement_map.get(cleaned, cleaned)
+                if target != cleaned:
+                    modified = True
+                    new_lines.append(f"{label}: {target}")
+                else:
+                    new_lines.append(line)
+                continue
+
+            new_lines.append(line)
 
         if not modified:
             return content

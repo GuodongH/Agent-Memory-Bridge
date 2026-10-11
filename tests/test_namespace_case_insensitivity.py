@@ -1346,3 +1346,118 @@ def test_reference_collision_both_creation_orderings_preserve_merged_tags_in_act
     assert len(recall_ord2_keep["items"]) == 1
     assert recall_ord2_orig["items"][0]["id"] == "ord2-surv"
     assert recall_ord2_keep["items"][0]["id"] == "ord2-surv"
+
+
+def test_migration_lineage_rewriting_matches_canonical_parser(tmp_path: Path) -> None:
+    from agent_mem_bridge.database_maintenance import rebuild_database_projections
+    from agent_mem_bridge.lineage import parse_lineage
+    from agent_mem_bridge.record_projection import sync_record_projection
+
+    db_path = tmp_path / "canonical_lineage.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        base = "Base rule content"
+        h_base = exact_content_hash(base)
+
+        # A in project:Moebius, B in project:MOEBIUS
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-A', 'project:Moebius', 'memory', 'A', ?, 'ha', ?, '2026-01-01T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-B', 'project:MOEBIUS', 'memory', 'B', ?, 'hb', ?, '2026-01-02T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+
+        # Consumer 1: Valid JSON dependency with internal whitespace: [" mem-B "]
+        c1_content = 'Rule with JSON dependency\ndepends_on_record_ids_json: [" mem-B "]'
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-consumer-1', 'project:consumer', 'memory', 'Consumer 1', ?, 'hc1', ?, '2026-01-03T00:00:00Z')
+            """,
+            (c1_content, exact_content_hash(c1_content)),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="mem-consumer-1",
+            namespace="project:consumer",
+            content=c1_content,
+            tags=[],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+
+        # Consumer 2: Non-JSON ordinary pipe-list field containing array-shaped literal: ["mem-B"]
+        # The canonical parser treats evidence_refs as a pipe-list value, so references_to("mem-B") is 0.
+        c2_content = 'Rule with literal evidence refs\nevidence_refs: ["mem-B"]'
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-consumer-2', 'project:consumer', 'memory', 'Consumer 2', ?, 'hc2', ?, '2026-01-04T00:00:00Z')
+            """,
+            (c2_content, exact_content_hash(c2_content)),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="mem-consumer-2",
+            namespace="project:consumer",
+            content=c2_content,
+            tags=[],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open store: migration runs and collapses mem-B into mem-A
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    with store._connect() as check_conn:
+        # Case 1 (immediate): depends_on_record_ids_json was rewritten to ["mem-A"]
+        c1_row = check_conn.execute("SELECT content FROM memories WHERE id = 'mem-consumer-1'").fetchone()
+        assert 'depends_on_record_ids_json: ["mem-A"]' in c1_row["content"]
+        edge_1 = check_conn.execute(
+            "SELECT target_id, target_exists FROM memory_edges WHERE source_id = 'mem-consumer-1'"
+        ).fetchone()
+        assert edge_1 is not None
+        assert edge_1["target_id"] == "mem-A"
+        assert edge_1["target_exists"] == 1
+
+        # Case 2 (immediate): evidence_refs: ["mem-B"] remains completely intact and unrewritten
+        c2_row = check_conn.execute("SELECT content FROM memories WHERE id = 'mem-consumer-2'").fetchone()
+        assert c2_row["content"] == c2_content
+        lineage_2 = parse_lineage(c2_row["content"])
+        assert len(lineage_2.references_to("mem-B")) == 0
+        assert len(lineage_2.references_to("mem-A")) == 0
+
+    # Rebuild database projections: verify state persists across rebuild without regressions
+    rebuild_database_projections(db_path)
+
+    with store._connect() as check_conn:
+        # Case 1 (post-rebuild): projection edge still points to mem-A with target_exists=1
+        edge_1_post = check_conn.execute(
+            "SELECT target_id, target_exists FROM memory_edges WHERE source_id = 'mem-consumer-1'"
+        ).fetchone()
+        assert edge_1_post is not None
+        assert edge_1_post["target_id"] == "mem-A"
+        assert edge_1_post["target_exists"] == 1
+
+        # Case 2 (post-rebuild): content still completely intact
+        c2_row_post = check_conn.execute("SELECT content FROM memories WHERE id = 'mem-consumer-2'").fetchone()
+        assert c2_row_post["content"] == c2_content
