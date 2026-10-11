@@ -333,6 +333,7 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
         lines = str(content or "").splitlines()
         modified = False
         new_lines: list[str] = []
+        seen_singletons: set[str] = set()
         for line in lines:
             label, separator, remainder = line.partition(":")
             if not separator:
@@ -393,6 +394,10 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                 continue
 
             if key in LINEAGE_SINGLETON_FIELDS:
+                if key in seen_singletons:
+                    new_lines.append(line)
+                    continue
+                seen_singletons.add(key)
                 cleaned = _compact_value(raw_remainder)
                 target = replacement_map.get(cleaned, cleaned)
                 if target != cleaned:
@@ -489,7 +494,10 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                 (survivor_id, dup_id),
             )
             conn.execute("DELETE FROM memory_edges WHERE target_id = ?", (dup_id,))
-            conn.execute("DELETE FROM memory_edges WHERE source_id = target_id")
+            conn.execute(
+                "DELETE FROM memory_edges WHERE source_id = ? AND target_id = ?",
+                (survivor_id, survivor_id),
+            )
 
         if has_revisions_table:
             conn.execute(
@@ -520,7 +528,10 @@ def _migrate_mixed_case_project_namespaces(conn: sqlite3.Connection) -> None:
                 "UPDATE memory_revisions SET successor_id = ? WHERE successor_id = ?",
                 (survivor_id, dup_id),
             )
-            conn.execute("DELETE FROM memory_revisions WHERE predecessor_id = successor_id")
+            conn.execute(
+                "DELETE FROM memory_revisions WHERE predecessor_id = ? AND successor_id = ?",
+                (survivor_id, survivor_id),
+            )
 
         if has_annotations_table:
             conn.execute(

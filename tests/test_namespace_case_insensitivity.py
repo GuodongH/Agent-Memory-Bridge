@@ -1461,3 +1461,222 @@ def test_migration_lineage_rewriting_matches_canonical_parser(tmp_path: Path) ->
         # Case 2 (post-rebuild): content still completely intact
         c2_row_post = check_conn.execute("SELECT content FROM memories WHERE id = 'mem-consumer-2'").fetchone()
         assert c2_row_post["content"] == c2_content
+
+
+def test_migration_does_not_rewrite_ignored_singleton_fields(tmp_path: Path) -> None:
+    from agent_mem_bridge.database_maintenance import rebuild_database_projections
+    from agent_mem_bridge.record_projection import sync_record_projection
+
+    db_path = tmp_path / "singleton_lineage.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        base = "Base rule content"
+        h_base = exact_content_hash(base)
+
+        # A in project:Moebius, B in project:MOEBIUS -> B collapses to A
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-A', 'project:Moebius', 'memory', 'A', ?, 'ha', ?, '2026-01-01T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-B', 'project:MOEBIUS', 'memory', 'B', ?, 'hb', ?, '2026-01-02T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+
+        # Consumer 1: Second line of singleton target_record_id is ignored by canonical parser
+        c1_content = "Rule with duplicate singleton\ntarget_record_id: mem-unrelated\ntarget_record_id: mem-B"
+        h_c1_exact = exact_content_hash(c1_content)
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-ignored-singleton', 'project:consumer', 'memory', 'Consumer Ignored', ?, 'hc1', ?, '2026-01-03T00:00:00Z')
+            """,
+            (c1_content, h_c1_exact),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="mem-ignored-singleton",
+            namespace="project:consumer",
+            content=c1_content,
+            tags=[],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+
+        # Consumer 2: First line of singleton target_record_id is active reference, second is ignored
+        c2_content = "Rule with active first singleton\ntarget_record_id: mem-B\ntarget_record_id: mem-unrelated"
+        h_c2_exact = exact_content_hash(c2_content)
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-active-singleton', 'project:consumer', 'memory', 'Consumer Active', ?, 'hc2', ?, '2026-01-04T00:00:00Z')
+            """,
+            (c2_content, h_c2_exact),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="mem-active-singleton",
+            namespace="project:consumer",
+            content=c2_content,
+            tags=[],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open store: migration runs
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    with store._connect() as check_conn:
+        # Consumer 1: Ignored line must NOT be rewritten; content and exact hash remain identical
+        row_c1 = check_conn.execute(
+            "SELECT content, exact_content_hash FROM memories WHERE id = 'mem-ignored-singleton'"
+        ).fetchone()
+        assert row_c1["content"] == c1_content
+        assert row_c1["exact_content_hash"] == h_c1_exact
+        assert "target_record_id: mem-B" in row_c1["content"]
+        assert "target_record_id: mem-A" not in row_c1["content"]
+
+        # Consumer 2: First line WAS active reference and must be rewritten to mem-A; second line untouched
+        row_c2 = check_conn.execute("SELECT content FROM memories WHERE id = 'mem-active-singleton'").fetchone()
+        assert "target_record_id: mem-A\ntarget_record_id: mem-unrelated" in row_c2["content"]
+
+    # Rebuild database projections to ensure stability across rebuild
+    rebuild_database_projections(db_path)
+
+    with store._connect() as check_conn:
+        # Consumer 1: still intact post-rebuild
+        row_c1_post = check_conn.execute(
+            "SELECT content, exact_content_hash FROM memories WHERE id = 'mem-ignored-singleton'"
+        ).fetchone()
+        assert row_c1_post["content"] == c1_content
+        assert row_c1_post["exact_content_hash"] == h_c1_exact
+
+        # Consumer 2: edge points to mem-A
+        edge_c2 = check_conn.execute(
+            "SELECT target_id, target_exists FROM memory_edges WHERE source_id = 'mem-active-singleton'"
+        ).fetchone()
+        assert edge_c2 is not None
+        assert edge_c2["target_id"] == "mem-A"
+        assert edge_c2["target_exists"] == 1
+
+
+def test_migration_scopes_self_reference_cleanup_and_preserves_unrelated_historical_self_rows(tmp_path: Path) -> None:
+    from agent_mem_bridge.record_projection import sync_record_projection
+
+    db_path = tmp_path / "scoped_self_cleanup.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        from agent_mem_bridge.schema import init_db
+
+        init_db(conn)
+        base = "Base rule content"
+        h_base = exact_content_hash(base)
+
+        # A in project:Moebius, B in project:MOEBIUS -> B collapses into A
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-A', 'project:Moebius', 'memory', 'A', ?, 'ha', ?, '2026-01-01T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-B', 'project:MOEBIUS', 'memory', 'B', ?, 'hb', ?, '2026-01-02T00:00:00Z')
+            """,
+            (base, h_base),
+        )
+
+        # Collapse-related edge: B -> A, which after repointing B -> A would become self-edge A -> A
+        conn.execute(
+            """
+            INSERT INTO memory_edges (source_id, target_id, relation, position, machine_owned, target_namespace, target_exists)
+            VALUES ('mem-B', 'mem-A', 'depends_on', 0, 1, 'project:moebius', 1)
+            """
+        )
+
+        # Collapse-related revision: B -> A, which after repointing B -> A would become self-revision A -> A
+        conn.execute(
+            """
+            INSERT INTO memory_revisions (predecessor_id, successor_id, actor, reason, created_at)
+            VALUES ('mem-B', 'mem-A', 'tester', 'case merge', '2026-01-03T00:00:00Z')
+            """
+        )
+
+        # Unrelated historical self-edge on 'mem-unrelated'
+        u_content = "Historical loop note\ndepends_on: mem-unrelated"
+        conn.execute(
+            """
+            INSERT INTO memories (id, namespace, kind, title, content, content_hash, exact_content_hash, created_at)
+            VALUES ('mem-unrelated', 'project:other', 'memory', 'Unrelated', ?, 'hu', ?, '2026-01-01T00:00:00Z')
+            """,
+            (u_content, exact_content_hash(u_content)),
+        )
+        sync_record_projection(
+            conn,
+            memory_id="mem-unrelated",
+            namespace="project:other",
+            content=u_content,
+            tags=[],
+            kind="memory",
+            actor=None,
+            source_app=None,
+            is_learning_candidate=False,
+        )
+        # Unrelated historical self-revision on 'mem-unrelated'
+        conn.execute(
+            """
+            INSERT INTO memory_revisions (predecessor_id, successor_id, actor, reason, created_at)
+            VALUES ('mem-unrelated', 'mem-unrelated', 'tester', 'historical loop test', '2026-01-01T00:00:00Z')
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Open store: migration runs and collapses mem-B into mem-A
+    store = MemoryStore(db_path, log_dir=tmp_path / "logs")
+
+    with store._connect() as check_conn:
+        # Collapse-generated self-edge A -> A must be deleted
+        collapse_self_edge = check_conn.execute(
+            "SELECT 1 FROM memory_edges WHERE source_id = 'mem-A' AND target_id = 'mem-A'"
+        ).fetchone()
+        assert collapse_self_edge is None
+
+        # Collapse-generated self-revision A -> A must be deleted
+        collapse_self_rev = check_conn.execute(
+            "SELECT 1 FROM memory_revisions WHERE predecessor_id = 'mem-A' AND successor_id = 'mem-A'"
+        ).fetchone()
+        assert collapse_self_rev is None
+
+        # Unrelated historical self-edge must be PRESERVED
+        unrelated_edge = check_conn.execute(
+            "SELECT 1 FROM memory_edges WHERE source_id = 'mem-unrelated' AND target_id = 'mem-unrelated'"
+        ).fetchone()
+        assert unrelated_edge is not None
+
+        # Unrelated historical self-revision must be PRESERVED
+        unrelated_rev = check_conn.execute(
+            "SELECT 1 FROM memory_revisions WHERE predecessor_id = 'mem-unrelated' AND successor_id = 'mem-unrelated'"
+        ).fetchone()
+        assert unrelated_rev is not None
