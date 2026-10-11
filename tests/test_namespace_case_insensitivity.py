@@ -735,12 +735,22 @@ def test_project_resolution_with_legacy_mixed_case_bindings(tmp_path: Path) -> N
     # Mock git repository directory
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir()
-    subprocess.run(["git", "init", str(repo_dir)], check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(repo_dir), "commit", "--allow-empty", "-m", "init"],
-        check=True,
-        capture_output=True,
-    )
+
+    def run_git(*args: str) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                ["git", "-C", str(repo_dir), *args],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise AssertionError(f"git {' '.join(args)} failed with exit code {exc.returncode}:\n{exc.stderr}") from exc
+
+    run_git("init")
+    run_git("config", "user.name", "AMB Test")
+    run_git("config", "user.email", "amb-test@example.invalid")
+    run_git("commit", "--allow-empty", "-m", "init")
 
     identity = repository_identity(repo_dir)
     repo_id = identity["repository_id"]
